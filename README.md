@@ -1,0 +1,256 @@
+# 🏥 AI Medical Triage Platform
+
+An AI-assisted triage engine that classifies patient urgency using a **RAG + LLM pipeline** built on LangChain, FAISS, HuggingFace embeddings, and the Claude API.
+
+> ⚠️ **This system is NOT a diagnostic tool and does NOT replace a licensed medical professional.** It is designed to assist in triage prioritisation only.
+
+---
+
+## Architecture
+
+```
+Patient Input (symptoms, vitals, report text, visual notes)
+         │
+         ▼
+┌─────────────────────────────────────────────────────────┐
+│                    FastAPI Endpoint                     │
+│                    api/main.py                          │
+└───────────────────────┬─────────────────────────────────┘
+                        │
+          ┌─────────────┴────────────┐
+          ▼                          ▼
+┌──────────────────┐      ┌──────────────────────────┐
+│   RAG Pipeline   │      │      Triage Chain         │
+│  rag/rag_pipeline│      │  triage/triage_chain.py   │
+│                  │      │                           │
+│  FAISS Vector DB │─────▶│  Retrieved context +      │
+│  (HuggingFace    │      │  patient input →          │
+│   embeddings)    │      │  Claude claude-sonnet API │
+└──────────────────┘      └──────────┬────────────────┘
+          ▲                          │
+          │                          ▼
+┌──────────────────┐      ┌──────────────────────────┐
+│  Knowledge Base  │      │    Structured Result      │
+│  knowledge_base/ │      │  urgency_level            │
+│  medical_        │      │  reasoning                │
+│  guidelines.py   │      │  next_steps               │
+└──────────────────┘      │  red_flags                │
+                          └──────────────────────────┘
+```
+
+### Project structure
+
+```
+medical_triage/
+├── api/
+│   └── main.py                  # FastAPI app — endpoints, request/response schemas
+├── rag/
+│   ├── rag_pipeline.py          # FAISS vector store, HuggingFace embeddings, retriever
+│   └── faiss_index/             # Auto-generated on first run (gitignored)
+├── triage/
+│   └── triage_chain.py          # LLM prompt, RAG context injection, response parsing
+├── knowledge_base/
+│   └── medical_guidelines.py    # 10 sample clinical triage guideline documents
+├── requirements.txt
+├── .env.example
+└── README.md
+```
+
+---
+
+## Quickstart
+
+### 1. Prerequisites
+
+- Python 3.11+
+- An [Anthropic API key](https://console.anthropic.com/)
+
+### 2. Clone / download and enter the project
+
+```bash
+cd medical_triage
+```
+
+### 3. Create a virtual environment
+
+```bash
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+```
+
+### 4. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+> First install will download the `sentence-transformers/all-MiniLM-L6-v2` model (~90 MB).
+
+### 5. Set your API key
+
+```bash
+cp .env.example .env
+# Edit .env and set ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Or simply export it:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-your-key-here
+```
+
+### 6. Run the API
+
+```bash
+cd api
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+On **first launch** the FAISS index is built automatically from the knowledge base (~5 seconds).
+Subsequent launches load it from disk instantly.
+
+The API is now available at `http://localhost:8000`.
+Interactive docs: `http://localhost:8000/docs`
+
+---
+
+## API Reference
+
+### `POST /triage`
+
+Classifies patient urgency.
+
+**Request body**
+
+```json
+{
+  "symptoms": "Severe chest pain radiating to my left arm, sweating, nausea — started 20 minutes ago.",
+  "vitals": {
+    "heart_rate": 118,
+    "spo2": 94,
+    "blood_pressure": { "systolic": 88, "diastolic": 60 },
+    "temperature": 37.2
+  },
+  "report_text": "ECG report: ST elevation in leads II, III, aVF. Troponin pending.",
+  "visual_notes": "Patient appears pale and diaphoretic."
+}
+```
+
+| Field          | Type     | Required | Description |
+|----------------|----------|----------|-------------|
+| `symptoms`     | string   | ✅        | Chief complaint / symptom description (3–4000 chars) |
+| `vitals`       | object   | ❌        | Heart rate (bpm), SpO2 (%), blood pressure (mmHg), temperature (°C) |
+| `report_text`  | string   | ❌        | OCR-extracted text from uploaded medical reports |
+| `visual_notes` | string   | ❌        | Free-text visual/physical observations |
+
+**Response**
+
+```json
+{
+  "urgency_level": "emergency_referral",
+  "reasoning": "The patient presents with classic STEMI symptoms — crushing chest pain radiating to the left arm with diaphoresis and nausea. Haemodynamic compromise is evident (BP 88/60, HR 118). ST elevation noted on ECG report further confirms the emergency nature of this presentation.",
+  "next_steps": "Call 911/999 immediately. Do not drive to hospital. Chew 300mg aspirin if not contraindicated and not already taken. Stay as still as possible and loosen tight clothing. Have someone stay with the patient until emergency services arrive.",
+  "red_flags": [
+    "Chest pain radiating to the left arm",
+    "Diaphoresis (sweating) with chest pain",
+    "Hypotension: BP 88/60 mmHg",
+    "Tachycardia: HR 118 bpm",
+    "ST elevation on ECG"
+  ],
+  "disclaimer": "⚠️ This assessment is generated by an AI triage assistant and is NOT a medical diagnosis...",
+  "latency_ms": 1842
+}
+```
+
+**Urgency levels**
+
+| Level                  | Meaning |
+|------------------------|---------|
+| `self_care`            | Manageable at home — rest, OTC medication, watchful waiting |
+| `doctor_consultation`  | GP/primary care within 24–48 hours |
+| `urgent_care`          | Same-day urgent care or ED walk-in |
+| `emergency_referral`   | Call 911/999 or go to ED immediately |
+
+---
+
+### `GET /health`
+
+```json
+{
+  "status": "ok",
+  "rag_ready": true,
+  "model": "claude-sonnet-4-20250514",
+  "version": "1.0.0"
+}
+```
+
+### `POST /admin/rebuild-index`
+
+Force-rebuilds the FAISS index from the knowledge base (e.g. after adding new documents).
+
+---
+
+## Sample `curl` requests
+
+```bash
+# Minimal request — symptoms only
+curl -s -X POST http://localhost:8000/triage \
+  -H "Content-Type: application/json" \
+  -d '{"symptoms": "I have a mild sore throat and runny nose for 2 days, no fever."}' | python3 -m json.tool
+
+# Full request with vitals
+curl -s -X POST http://localhost:8000/triage \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symptoms": "Sudden worst headache of my life, came on in seconds, stiff neck, sensitive to light.",
+    "vitals": {"heart_rate": 90, "spo2": 98, "temperature": 38.8},
+    "visual_notes": "Appears confused and photophobic"
+  }' | python3 -m json.tool
+```
+
+---
+
+## Extending the knowledge base
+
+Add entries to `knowledge_base/medical_guidelines.py` following the existing schema:
+
+```python
+{
+    "id":       "unique_id",
+    "title":    "Document Title",
+    "category": "specialty_tag",
+    "content":  "Full text of the clinical guideline …",
+}
+```
+
+Then either restart the server (index rebuilds automatically if `force_rebuild=True` is set)
+or call `POST /admin/rebuild-index` to rebuild without restarting.
+
+---
+
+## Configuration
+
+| Environment variable | Default                        | Description |
+|----------------------|--------------------------------|-------------|
+| `ANTHROPIC_API_KEY`  | *(required)*                   | Your Anthropic API key |
+| `LLM_MODEL`          | `claude-sonnet-4-20250514`     | Claude model string |
+| `RAG_TOP_K`          | `4`                            | Number of guideline chunks to retrieve |
+| `LOG_LEVEL`          | `INFO`                         | Logging verbosity |
+
+---
+
+## Production considerations
+
+- **Replace sample knowledge base** with validated clinical guidelines (e.g. Manchester Triage System, ESI protocols, NICE guidelines).
+- **Add authentication** to the `/triage` endpoint (OAuth2 / API key middleware).
+- **Rate-limit** the endpoint to prevent abuse.
+- **Restrict CORS** — remove `allow_origins=["*"]` and specify your frontend domain.
+- **Use GPU** for embeddings in high-throughput deployments — change `device: "cpu"` to `"cuda"` in `rag_pipeline.py`.
+- **Log and audit** all triage requests for clinical governance and safety review.
+- **Never expose raw LLM outputs** to patients without human-in-the-loop review in regulated environments.
+
+---
+
+## Disclaimer
+
+This software is provided for research and educational purposes. It has not been validated as a medical device and must not be used as the sole basis for clinical decisions. Always consult a licensed healthcare professional.

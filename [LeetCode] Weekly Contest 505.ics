@@ -1,0 +1,12 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Tri Tech Computers//node-icalendar//EN
+BEGIN:VEVENT
+DTSTAMP:20260604T182900Z
+UID:LeetCode_weekly-contest-505
+LOCATION:https://leetcode.com/contest/weekly-contest-505
+SUMMARY:[LeetCode] - Weekly Contest 505
+DTSTART:20260607T023000Z
+DTEND:20260607T040000Z
+END:VEVENT
+END:VCALENDAR
