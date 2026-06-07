@@ -1,0 +1,6 @@
+{
+  "name": "Medical Triage Admin Portal",
+  "description": "An administrative portal for managing medical triage operations, patient records, and system settings.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

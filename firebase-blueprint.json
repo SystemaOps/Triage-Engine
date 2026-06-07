@@ -1,0 +1,87 @@
+{
+  "entities": {
+    "users": {
+        "title": "User",
+        "description": "User account information",
+        "type": "object",
+        "required": ["userId", "email", "role"],
+        "properties": {
+            "userId": { "type": "string" },
+            "email": { "type": "string", "format": "email" },
+            "role": { "type": "string", "enum": ["admin", "doctor", "operator", "analyst"] }
+        }
+    },
+    "kiosks": {
+        "title": "Kiosk",
+        "description": "Information about a medical kiosk",
+        "type": "object",
+        "required": ["kioskId", "status"],
+        "properties": {
+            "kioskId": { "type": "string" },
+            "status": { "type": "string", "enum": ["online", "offline"] },
+            "lastSync": { "type": "string", "format": "date-time" }
+        }
+    },
+    "records": {
+        "title": "TriageRecord",
+        "description": "Patient triage record",
+        "type": "object",
+        "required": ["recordId", "patientId", "timestamp"],
+        "properties": {
+            "recordId": { "type": "string" },
+            "patientId": { "type": "string" },
+            "vitalSignsId": { "type": "string" },
+            "reportId": { "type": "string" },
+            "aiOutputId": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" }
+        }
+    },
+    "vitalSigns": {
+        "title": "VitalSigns",
+        "description": "Vital signs measurement",
+        "type": "object",
+        "properties": {
+            "vitalSignsId": { "type": "string" },
+            "bp": { "type": "string" },
+            "spo2": { "type": "number" },
+            "hr": { "type": "number" },
+            "temp": { "type": "number" },
+            "glucose": { "type": "number" }
+        }
+    },
+    "auditLogs": {
+        "title": "AuditLog",
+        "description": "System action log",
+        "type": "object",
+        "required": ["logId", "action", "userId", "timestamp"],
+        "properties": {
+            "logId": { "type": "string" },
+            "action": { "type": "string" },
+            "userId": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" }
+        }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "users" },
+      "description": "User profiles"
+    },
+    "/kiosks/{kioskId}": {
+      "schema": { "$ref": "kiosks" },
+      "description": "Medical kiosks"
+    },
+    "/records/{recordId}": {
+      "schema": { "$ref": "records" },
+      "description": "Triage records"
+    },
+    "/vitalSigns/{vitalSignsId}": {
+      "schema": { "$ref": "vitalSigns" },
+      "description": "Vital signs"
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "auditLogs" },
+      "description": "Audit logs"
+    }
+  }
+}
