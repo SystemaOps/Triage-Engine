@@ -16,6 +16,9 @@ import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -23,6 +26,7 @@ from pydantic import BaseModel, Field, validator
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from db.client import save_triage_session
 from rag.rag_pipeline import MedicalRAGPipeline
 from triage.triage_chain import run_triage
 
@@ -201,6 +205,18 @@ async def triage_patient(request: TriageRequest):
         )
 
     latency_ms = int((time.perf_counter() - t_start) * 1000)
+
+    await save_triage_session(
+        symptoms=request.symptoms,
+        vitals=vitals_dict,
+        report_text=request.report_text,
+        visual_notes=request.visual_notes,
+        urgency_level=result["urgency_level"],
+        reasoning=result["reasoning"],
+        next_steps=result["next_steps"],
+        red_flags=result.get("red_flags", []),
+        latency_ms=latency_ms,
+    )
 
     return TriageResponse(
         urgency_level=result["urgency_level"],

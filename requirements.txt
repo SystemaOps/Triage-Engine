@@ -13,5 +13,8 @@ langchain-text-splitters>=0.2.0
 
 # Retrieval (pure Python — no ML deps required)
 rank-bm25>=0.2.2
+# Database
+supabase>=2.0.0
+
 # Utilities
 python-dotenv>=1.0.0

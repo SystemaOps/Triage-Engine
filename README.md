@@ -1,6 +1,6 @@
-# 🏥 AI Medical Triage Platform
+# AI Medical Triage Platform
 
-An AI-assisted triage engine that classifies patient urgency using a **RAG + LLM pipeline** built on LangChain, FAISS, HuggingFace embeddings, and the Claude API.
+An AI-assisted triage engine that classifies patient urgency using a **BM25 retrieval + LLM pipeline** built on LangChain, BM25, and NVIDIA Nemotron via OpenRouter.
 
 > ⚠️ **This system is NOT a diagnostic tool and does NOT replace a licensed medical professional.** It is designed to assist in triage prioritisation only.
 
@@ -23,36 +23,36 @@ Patient Input (symptoms, vitals, report text, visual notes)
 │   RAG Pipeline   │      │      Triage Chain         │
 │  rag/rag_pipeline│      │  triage/triage_chain.py   │
 │                  │      │                           │
-│  FAISS Vector DB │─────▶│  Retrieved context +      │
-│  (HuggingFace    │      │  patient input →          │
-│   embeddings)    │      │  Claude claude-sonnet API │
-└──────────────────┘      └──────────┬────────────────┘
-          ▲                          │
-          │                          ▼
-┌──────────────────┐      ┌──────────────────────────┐
-│  Knowledge Base  │      │    Structured Result      │
-│  knowledge_base/ │      │  urgency_level            │
-│  medical_        │      │  reasoning                │
-│  guidelines.py   │      │  next_steps               │
-└──────────────────┘      │  red_flags                │
+│  BM25 Retriever  │─────▶│  Retrieved context +      │
+│  (pure Python,   │      │  patient input →          │
+│   no ML deps)    │      │  NVIDIA Nemotron via      │
+└──────────────────┘      │  OpenRouter               │
+          ▲               └──────────┬────────────────┘
+          │                          │
+┌──────────────────┐                 ▼
+│  Knowledge Base  │      ┌──────────────────────────┐
+│  knowledge_base/ │      │    Structured Result      │
+│  medical_        │      │  urgency_level            │
+│  guidelines.py   │      │  reasoning                │
+└──────────────────┘      │  next_steps               │
+                          │  red_flags                │
                           └──────────────────────────┘
 ```
 
 ### Project structure
 
 ```
-medical_triage/
+triage-engine/
 ├── api/
 │   └── main.py                  # FastAPI app — endpoints, request/response schemas
 ├── rag/
-│   ├── rag_pipeline.py          # FAISS vector store, HuggingFace embeddings, retriever
-│   └── faiss_index/             # Auto-generated on first run (gitignored)
+│   └── rag_pipeline.py          # BM25 retriever built from knowledge base
 ├── triage/
 │   └── triage_chain.py          # LLM prompt, RAG context injection, response parsing
 ├── knowledge_base/
-│   └── medical_guidelines.py    # 10 sample clinical triage guideline documents
+│   └── medical_guidelines.py    # 10 clinical triage guideline documents
 ├── requirements.txt
-├── .env.example
+├── env.example
 └── README.md
 ```
 
@@ -63,18 +63,19 @@ medical_triage/
 ### 1. Prerequisites
 
 - Python 3.11+
-- An [Anthropic API key](https://console.anthropic.com/)
+- An [OpenRouter API key](https://openrouter.ai/keys)
 
-### 2. Clone / download and enter the project
+### 2. Clone and enter the project
 
 ```bash
-cd medical_triage
+git clone https://github.com/SystemaOps/Triage-Engine.git
+cd Triage-Engine
 ```
 
 ### 3. Create a virtual environment
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 ```
 
@@ -84,19 +85,17 @@ source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-> First install will download the `sentence-transformers/all-MiniLM-L6-v2` model (~90 MB).
-
 ### 5. Set your API key
 
 ```bash
-cp .env.example .env
-# Edit .env and set ANTHROPIC_API_KEY=sk-ant-...
+cp env.example .env
+# Edit .env and set OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-Or simply export it:
+Or export directly:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-your-key-here
+export OPENROUTER_API_KEY=sk-or-v1-your-key-here
 ```
 
 ### 6. Run the API
@@ -106,10 +105,9 @@ cd api
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-On **first launch** the FAISS index is built automatically from the knowledge base (~5 seconds).
-Subsequent launches load it from disk instantly.
+The BM25 index builds instantly from the knowledge base on startup.
 
-The API is now available at `http://localhost:8000`.
+The API is now available at `http://localhost:8000`.  
 Interactive docs: `http://localhost:8000/docs`
 
 ---
@@ -149,7 +147,7 @@ Classifies patient urgency.
 {
   "urgency_level": "emergency_referral",
   "reasoning": "The patient presents with classic STEMI symptoms — crushing chest pain radiating to the left arm with diaphoresis and nausea. Haemodynamic compromise is evident (BP 88/60, HR 118). ST elevation noted on ECG report further confirms the emergency nature of this presentation.",
-  "next_steps": "Call 911/999 immediately. Do not drive to hospital. Chew 300mg aspirin if not contraindicated and not already taken. Stay as still as possible and loosen tight clothing. Have someone stay with the patient until emergency services arrive.",
+  "next_steps": "Call 911/999 immediately. Do not drive to hospital. Chew 300mg aspirin if not contraindicated. Have someone stay with the patient until emergency services arrive.",
   "red_flags": [
     "Chest pain radiating to the left arm",
     "Diaphoresis (sweating) with chest pain",
@@ -158,7 +156,7 @@ Classifies patient urgency.
     "ST elevation on ECG"
   ],
   "disclaimer": "⚠️ This assessment is generated by an AI triage assistant and is NOT a medical diagnosis...",
-  "latency_ms": 1842
+  "latency_ms": 8521
 }
 ```
 
@@ -179,14 +177,14 @@ Classifies patient urgency.
 {
   "status": "ok",
   "rag_ready": true,
-  "model": "claude-sonnet-4-20250514",
+  "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
   "version": "1.0.0"
 }
 ```
 
 ### `POST /admin/rebuild-index`
 
-Force-rebuilds the FAISS index from the knowledge base (e.g. after adding new documents).
+Force-rebuilds the BM25 index from the knowledge base. Requires `X-Admin-Key` header.
 
 ---
 
@@ -223,19 +221,19 @@ Add entries to `knowledge_base/medical_guidelines.py` following the existing sch
 }
 ```
 
-Then either restart the server (index rebuilds automatically if `force_rebuild=True` is set)
-or call `POST /admin/rebuild-index` to rebuild without restarting.
+Then call `POST /admin/rebuild-index` or restart the server.
 
 ---
 
 ## Configuration
 
-| Environment variable | Default                        | Description |
-|----------------------|--------------------------------|-------------|
-| `ANTHROPIC_API_KEY`  | *(required)*                   | Your Anthropic API key |
-| `LLM_MODEL`          | `claude-sonnet-4-20250514`     | Claude model string |
-| `RAG_TOP_K`          | `4`                            | Number of guideline chunks to retrieve |
-| `LOG_LEVEL`          | `INFO`                         | Logging verbosity |
+| Environment variable  | Default                                            | Description              |
+|-----------------------|----------------------------------------------------|--------------------------|
+| `OPENROUTER_API_KEY`  | *(required)*                                       | Your OpenRouter API key  |
+| `ADMIN_API_KEY`       | *(required for /admin/rebuild-index)*              | Admin endpoint key       |
+| `LLM_MODEL`           | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | Model string via OpenRouter |
+| `RAG_TOP_K`           | `4`                                                | Guidelines to retrieve   |
+| `LOG_LEVEL`           | `INFO`                                             | Logging verbosity        |
 
 ---
 
@@ -245,7 +243,6 @@ or call `POST /admin/rebuild-index` to rebuild without restarting.
 - **Add authentication** to the `/triage` endpoint (OAuth2 / API key middleware).
 - **Rate-limit** the endpoint to prevent abuse.
 - **Restrict CORS** — remove `allow_origins=["*"]` and specify your frontend domain.
-- **Use GPU** for embeddings in high-throughput deployments — change `device: "cpu"` to `"cuda"` in `rag_pipeline.py`.
 - **Log and audit** all triage requests for clinical governance and safety review.
 - **Never expose raw LLM outputs** to patients without human-in-the-loop review in regulated environments.
 
