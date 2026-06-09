@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+easyocr
+torch
+torchvision
+transformers
+pillow
+python-multipart
