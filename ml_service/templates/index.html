@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SystemaOps AI Triage Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --primary: #38bdf8;
+            --primary-glow: rgba(56, 189, 248, 0.15);
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            transition: all 0.25s ease;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.05) 0%, transparent 40%);
+        }
+
+        header {
+            padding: 24px 40px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(12px);
+            background: rgba(15, 23, 42, 0.6);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo-section h1 {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary), #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .logo-section p {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .badge {
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            color: var(--primary);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .badge-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--success);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--success);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0.6; }
+        }
+
+        main {
+            flex: 1;
+            padding: 40px;
+            max-width: 1400px;
+            width: 100%;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 32px;
+        }
+
+        @media (max-width: 968px) {
+            main {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 32px;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), transparent);
+        }
+
+        .card.card-xray::before {
+            background: linear-gradient(90deg, #10b981, transparent);
+        }
+
+        .card-header {
+            margin-bottom: 24px;
+        }
+
+        .card-header h2 {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text-main);
+            margin-bottom: 4px;
+        }
+
+        .card-header p {
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+
+        .upload-area {
+            border: 2px dashed rgba(255, 255, 255, 0.15);
+            border-radius: 16px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.02);
+            margin-bottom: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .upload-area:hover {
+            border-color: var(--primary);
+            background: rgba(56, 189, 248, 0.03);
+        }
+
+        .card-xray .upload-area:hover {
+            border-color: var(--success);
+            background: rgba(16, 185, 129, 0.03);
+        }
+
+        .upload-icon {
+            font-size: 40px;
+            color: var(--text-muted);
+        }
+
+        .upload-area p {
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+
+        .upload-area span {
+            color: var(--primary);
+            font-weight: 500;
+        }
+
+        .card-xray .upload-area span {
+            color: var(--success);
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, var(--primary), #0284c7);
+            border: none;
+            color: white;
+            padding: 14px 28px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 16px rgba(56, 189, 248, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(56, 189, 248, 0.3);
+        }
+
+        .card-xray .btn {
+            background: linear-gradient(135deg, var(--success), #047857);
+            box-shadow: 0 4px 16px rgba(16, 185, 129, 0.2);
+        }
+
+        .card-xray .btn:hover {
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn:disabled {
+            background: #334155;
+            color: #64748b;
+            box-shadow: none;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .preview-container {
+            margin-top: 24px;
+            border-radius: 12px;
+            overflow: hidden;
+            display: none;
+            border: 1px solid var(--border-color);
+            background: rgba(0, 0, 0, 0.2);
+            position: relative;
+        }
+
+        .preview-image {
+            width: 100%;
+            max-height: 250px;
+            object-fit: contain;
+            display: block;
+        }
+
+        .clear-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .clear-btn:hover {
+            background: var(--danger);
+            border-color: var(--danger);
+        }
+
+        .results-container {
+            margin-top: 24px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 24px;
+            display: none;
+        }
+
+        .results-header {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Metric Cards for OCR */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .metric-card {
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-value {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .metric-unit {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 400;
+            margin-left: 2px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .status-normal { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+        .status-elevated { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
+        .status-critical { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+
+        /* Vision Pathology Display */
+        .pathology-box {
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .pathology-label {
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+
+        .pathology-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--danger);
+            text-transform: uppercase;
+        }
+
+        .pathology-value.normal {
+            color: var(--success);
+        }
+
+        .confidence-meter {
+            margin-top: 16px;
+        }
+
+        .meter-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        .meter-bg {
+            height: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .meter-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), #818cf8);
+            width: 0%;
+            border-radius: 4px;
+        }
+
+        .card-xray .meter-fill {
+            background: linear-gradient(90deg, var(--success), #34d399);
+        }
+
+        /* Loading Spinner */
+        .loading-spinner {
+            display: none;
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .raw-text-log {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            font-family: monospace;
+            font-size: 11px;
+            max-height: 120px;
+            overflow-y: auto;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo-section">
+            <h1>SystemaOps AI Triage</h1>
+            <p>Multimodal Medical Diagnostics Panel</p>
+        </div>
+        <div class="badge">
+            <span class="badge-dot"></span>
+            ML Services Online
+        </div>
+    </header>
+
+    <main>
+        <!-- Card 1: Medical Report OCR -->
+        <section class="card">
+            <div class="card-header">
+                <h2>Medical Report OCR</h2>
+                <p>Upload a blood test report to extract vital metrics</p>
+            </div>
+            
+            <div class="upload-area" id="ocr-dropzone">
+                <div class="upload-icon">📄</div>
+                <p>Drag & drop blood report image, or <span>browse</span></p>
+                <input type="file" id="ocr-input" class="file-input" accept="image/*">
+            </div>
+
+            <div class="preview-container" id="ocr-preview-container">
+                <button class="clear-btn" id="ocr-clear">Remove</button>
+                <img src="" alt="OCR Preview" class="preview-image" id="ocr-preview-img">
+            </div>
+
+            <button class="btn" id="ocr-submit-btn" disabled style="margin-top: auto;">
+                <span id="ocr-btn-text">Extract Report Data</span>
+                <div class="loading-spinner" id="ocr-spinner"></div>
+            </button>
+
+            <!-- Results -->
+            <div class="results-container" id="ocr-results">
+                <div class="results-header">📊 Extracted Panel Metrics</div>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-label">Glucose</div>
+                        <div class="metric-value" id="val-glucose">--</div>
+                        <div class="metric-unit">mg/dL</div>
+                        <div class="status-badge" id="status-glucose">--</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">WBC Count</div>
+                        <div class="metric-value" id="val-wbc">--</div>
+                        <div class="metric-unit">K/uL</div>
+                        <div class="status-badge" id="status-wbc">--</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Hemoglobin</div>
+                        <div class="metric-value" id="val-hb">--</div>
+                        <div class="metric-unit">g/dL</div>
+                        <div class="status-badge" id="status-hb">--</div>
+                    </div>
+                </div>
+                <div class="results-header">📜 Raw Text Log</div>
+                <div class="raw-text-log" id="ocr-raw-text"></div>
+            </div>
+        </section>
+
+        <!-- Card 2: Chest X-ray Classification -->
+        <section class="card card-xray">
+            <div class="card-header">
+                <h2>Chest X-ray Anomaly Detection</h2>
+                <p>Upload a chest X-ray image to check for lung pathologies</p>
+            </div>
+
+            <div class="upload-area" id="xray-dropzone">
+                <div class="upload-icon">🩻</div>
+                <p>Drag & drop chest radiograph image, or <span>browse</span></p>
+                <input type="file" id="xray-input" class="file-input" accept="image/*">
+            </div>
+
+            <div class="preview-container" id="xray-preview-container">
+                <button class="clear-btn" id="xray-clear">Remove</button>
+                <img src="" alt="X-ray Preview" class="preview-image" id="xray-preview-img">
+            </div>
+
+            <button class="btn" id="xray-submit-btn" disabled style="margin-top: auto;">
+                <span id="xray-btn-text">Classify X-ray Image</span>
+                <div class="loading-spinner" id="xray-spinner"></div>
+            </button>
+
+            <!-- Results -->
+            <div class="results-container" id="xray-results">
+                <div class="results-header">🔍 Vision Model Diagnostics</div>
+                <div class="pathology-box">
+                    <div class="pathology-label">Predicted Pathology:</div>
+                    <div class="pathology-value" id="xray-pathology">--</div>
+                </div>
+                <div class="confidence-meter">
+                    <div class="meter-label">
+                        <span>Classification Confidence</span>
+                        <span id="xray-confidence">0%</span>
+                    </div>
+                    <div class="meter-bg">
+                        <div class="meter-fill" id="xray-confidence-bar"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // Setup triggers for file inputs
+        setupUpload('ocr');
+        setupUpload('xray');
+
+        function setupUpload(prefix) {
+            const dropzone = document.getElementById(`${prefix}-dropzone`);
+            const input = document.getElementById(`${prefix}-input`);
+            const previewContainer = document.getElementById(`${prefix}-preview-container`);
+            const previewImg = document.getElementById(`${prefix}-preview-img`);
+            const clearBtn = document.getElementById(`${prefix}-clear`);
+            const submitBtn = document.getElementById(`${prefix}-submit-btn`);
+            const btnText = document.getElementById(`${prefix}-btn-text`);
+            const spinner = document.getElementById(`${prefix}-spinner`);
+            const results = document.getElementById(`${prefix}-results`);
+
+            dropzone.addEventListener('click', () => input.click());
+
+            dropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropzone.style.borderColor = prefix === 'xray' ? 'var(--success)' : 'var(--primary)';
+            });
+
+            dropzone.addEventListener('dragleave', () => {
+                dropzone.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+            });
+
+            dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropzone.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                if (e.dataTransfer.files.length > 0) {
+                    handleFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            input.addEventListener('change', () => {
+                if (input.files.length > 0) {
+                    handleFile(input.files[0]);
+                }
+            });
+
+            clearBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                input.value = '';
+                previewContainer.style.display = 'none';
+                dropzone.style.display = 'flex';
+                submitBtn.disabled = true;
+                results.style.display = 'none';
+            });
+
+            function handleFile(file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    previewImg.src = e.target.result;
+                    previewContainer.style.display = 'block';
+                    dropzone.style.display = 'none';
+                    submitBtn.disabled = false;
+                };
+                reader.readAsDataURL(file);
+            }
+
+            // Form Submissions
+            submitBtn.addEventListener('click', async () => {
+                const file = input.files[0];
+                if (!file) return;
+
+                // Loading State
+                submitBtn.disabled = true;
+                btnText.style.display = 'none';
+                spinner.style.display = 'block';
+                results.style.display = 'none';
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const endpoint = prefix === 'ocr' ? '/ocr/process' : '/xray/classify';
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) throw new Error('Model processing failed');
+
+                    const data = await response.json();
+                    
+                    if (prefix === 'ocr') {
+                        renderOCRResults(data);
+                    } else {
+                        renderXrayResults(data);
+                    }
+                } catch (error) {
+                    alert('Error: ' + error.message);
+                } finally {
+                    submitBtn.disabled = false;
+                    btnText.style.display = 'block';
+                    spinner.style.display = 'none';
+                }
+            });
+        }
+
+        function renderOCRResults(data) {
+            const results = document.getElementById('ocr-results');
+            results.style.display = 'block';
+
+            // Extract values
+            const glucose = data.metrics.blood_glucose;
+            const wbc = data.metrics.white_blood_cells;
+            const hb = data.metrics.hemoglobin;
+
+            // Render Glucose
+            const gValEl = document.getElementById('val-glucose');
+            const gStatusEl = document.getElementById('status-glucose');
+            if (glucose !== null) {
+                gValEl.innerText = glucose;
+                if (glucose < 100) {
+                    gStatusEl.innerText = 'NORMAL';
+                    gStatusEl.className = 'status-badge status-normal';
+                } else if (glucose <= 125) {
+                    gStatusEl.innerText = 'ELEVATED';
+                    gStatusEl.className = 'status-badge status-elevated';
+                } else {
+                    gStatusEl.innerText = 'CRITICAL';
+                    gStatusEl.className = 'status-badge status-critical';
+                }
+            } else {
+                gValEl.innerText = 'N/A';
+                gStatusEl.innerText = '--';
+                gStatusEl.className = 'status-badge';
+            }
+
+            // Render WBC
+            const wValEl = document.getElementById('val-wbc');
+            const wStatusEl = document.getElementById('status-wbc');
+            if (wbc !== null) {
+                wValEl.innerText = wbc;
+                if (wbc >= 4.5 && wbc <= 11.0) {
+                    wStatusEl.innerText = 'NORMAL';
+                    wStatusEl.className = 'status-badge status-normal';
+                } else {
+                    wStatusEl.innerText = 'ABNORMAL';
+                    wStatusEl.className = 'status-badge status-critical';
+                }
+            } else {
+                wValEl.innerText = 'N/A';
+                wStatusEl.innerText = '--';
+                wStatusEl.className = 'status-badge';
+            }
+
+            // Render Hemoglobin
+            const hValEl = document.getElementById('val-hb');
+            const hStatusEl = document.getElementById('status-hb');
+            if (hb !== null) {
+                hValEl.innerText = hb;
+                if (hb >= 12.0 && hb <= 17.5) {
+                    hStatusEl.innerText = 'NORMAL';
+                    hStatusEl.className = 'status-badge status-normal';
+                } else {
+                    hStatusEl.innerText = 'ABNORMAL';
+                    hStatusEl.className = 'status-badge status-critical';
+                }
+            } else {
+                hValEl.innerText = 'N/A';
+                hStatusEl.innerText = '--';
+                hStatusEl.className = 'status-badge';
+            }
+
+            // Raw lines log
+            const logEl = document.getElementById('ocr-raw-text');
+            logEl.innerText = data.extracted_text.join('\n');
+        }
+
+        function renderXrayResults(data) {
+            const results = document.getElementById('xray-results');
+            results.style.display = 'block';
+
+            const pathology = data.analysis.pathology;
+            const confidence = data.analysis.confidence;
+
+            const pathEl = document.getElementById('xray-pathology');
+            pathEl.innerText = pathology;
+            
+            if (pathology.toLowerCase() === 'normal') {
+                pathEl.className = 'pathology-value normal';
+            } else {
+                pathEl.className = 'pathology-value';
+            }
+
+            // Render Meter
+            const confPct = Math.round(confidence * 100);
+            document.getElementById('xray-confidence').innerText = `${confPct}%`;
+            document.getElementById('xray-confidence-bar').style.width = `${confPct}%`;
+        }
+    </script>
+</body>
+</html>
