@@ -32,6 +32,20 @@ MODEL = os.environ.get("LLM_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoni
 # ── Urgency levels ─────────────────────────────────────────────────────────────
 URGENCY_LEVELS = ["self_care", "doctor_consultation", "urgent_care", "emergency_referral"]
 
+# ── Chat system prompt ─────────────────────────────────────────────────────────
+CHAT_SYSTEM_PROMPT = """You are a medical triage assistant continuing a conversation with a patient.
+
+You have already performed an initial triage assessment earlier in this conversation.
+The patient may ask follow-up questions, provide additional symptoms, or request clarification.
+
+RULES:
+- Answer clearly and compassionately.
+- If the patient reports new or worsening symptoms, reassess urgency and say so explicitly.
+- Never provide a diagnosis. Always remind the patient to consult a licensed medical professional.
+- If at any point the situation sounds life-threatening, immediately tell them to call 911/999.
+- Keep responses concise and easy to understand — avoid medical jargon where possible.
+"""
+
 # ── Prompts ────────────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """You are a medical triage assistant embedded in a healthcare support platform.
@@ -232,3 +246,32 @@ async def run_triage(
     result = _parse_triage_response(raw_output)
     logger.info(f"Triage result: urgency_level={result['urgency_level']}")
     return result
+
+
+async def run_chat(message: str, history: list[dict]) -> str:
+    """
+    Continue a triage conversation given a new user message and prior history.
+
+    Parameters
+    ----------
+    message : New message from the patient.
+    history : List of prior {"role": "user"/"assistant", "content": "..."} dicts.
+
+    Returns
+    -------
+    Assistant reply as a plain string.
+    """
+    messages = [
+        {"role": "system", "content": CHAT_SYSTEM_PROMPT},
+        *history,
+        {"role": "user", "content": message},
+    ]
+    logger.info(f"Chat follow-up ({len(history)} prior messages): {message[:80]}…")
+    response = await _client.chat.completions.create(
+        model=MODEL,
+        max_tokens=512,
+        messages=messages,
+    )
+    reply = response.choices[0].message.content.strip()
+    logger.info("Chat reply generated.")
+    return reply

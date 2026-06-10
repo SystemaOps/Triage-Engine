@@ -13,6 +13,7 @@ import logging
 import os
 import sys
 import time
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -26,9 +27,9 @@ from pydantic import BaseModel, Field, validator
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from db.client import save_triage_session
+from db.client import append_messages, get_session_messages, save_triage_session
 from rag.rag_pipeline import MedicalRAGPipeline
-from triage.triage_chain import run_triage
+from triage.triage_chain import run_chat, run_triage
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -117,12 +118,23 @@ class TriageRequest(BaseModel):
 
 
 class TriageResponse(BaseModel):
+    session_id:    str           = Field(..., description="Session ID — pass this to POST /chat for follow-up questions")
     urgency_level: str           = Field(..., description="One of: self_care | doctor_consultation | urgent_care | emergency_referral")
     reasoning:     str           = Field(..., description="2-3 sentence clinical reasoning")
     next_steps:    str           = Field(..., description="Recommended next steps for the patient")
     red_flags:     list[str]     = Field(..., description="List of detected red-flag symptoms")
     disclaimer:    str           = Field(..., description="Mandatory disclaimer")
     latency_ms:    Optional[int] = Field(None, description="Pipeline latency in milliseconds")
+
+
+class ChatRequest(BaseModel):
+    session_id: str  = Field(..., description="session_id returned by POST /triage")
+    message:    str  = Field(..., min_length=1, max_length=2000, description="Follow-up message from the patient")
+
+
+class ChatResponse(BaseModel):
+    session_id: str = Field(..., description="Same session ID")
+    reply:      str = Field(..., description="Assistant response")
 
 
 class HealthResponse(BaseModel):
@@ -205,8 +217,31 @@ async def triage_patient(request: TriageRequest):
         )
 
     latency_ms = int((time.perf_counter() - t_start) * 1000)
+    session_id = str(uuid.uuid4())
+
+    user_summary = f"Symptoms: {request.symptoms}"
+    if vitals_dict:
+        user_summary += f"\nVitals: {vitals_dict}"
+    if request.report_text:
+        user_summary += f"\nReport: {request.report_text[:300]}"
+    if request.visual_notes:
+        user_summary += f"\nObservations: {request.visual_notes}"
+
+    red_flags = result.get("red_flags", [])
+    assistant_summary = (
+        f"Urgency level: {result['urgency_level']}\n"
+        f"Reasoning: {result['reasoning']}\n"
+        f"Next steps: {result['next_steps']}\n"
+        f"Red flags: {', '.join(red_flags) if red_flags else 'None detected'}"
+    )
+
+    initial_messages = [
+        {"role": "user",      "content": user_summary},
+        {"role": "assistant", "content": assistant_summary},
+    ]
 
     await save_triage_session(
+        session_id=session_id,
         symptoms=request.symptoms,
         vitals=vitals_dict,
         report_text=request.report_text,
@@ -214,11 +249,13 @@ async def triage_patient(request: TriageRequest):
         urgency_level=result["urgency_level"],
         reasoning=result["reasoning"],
         next_steps=result["next_steps"],
-        red_flags=result.get("red_flags", []),
+        red_flags=red_flags,
         latency_ms=latency_ms,
+        messages=initial_messages,
     )
 
     return TriageResponse(
+        session_id=session_id,
         urgency_level=result["urgency_level"],
         reasoning=result["reasoning"],
         next_steps=result["next_steps"],
@@ -230,6 +267,43 @@ async def triage_patient(request: TriageRequest):
         ),
         latency_ms=latency_ms,
     )
+
+
+@app.post("/chat", response_model=ChatResponse, tags=["Triage"],
+          status_code=status.HTTP_200_OK)
+async def chat(request: ChatRequest):
+    """
+    **Follow-up chat within an existing triage session.**
+
+    Use the `session_id` returned by `POST /triage` to continue the conversation.
+    The AI remembers the full prior context and can reassess urgency if new
+    symptoms are reported.
+    """
+    history = await get_session_messages(request.session_id)
+    if history is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found. Start a new triage with POST /triage.",
+        )
+
+    try:
+        reply = await run_chat(message=request.message, history=history)
+    except Exception as exc:
+        logger.exception(f"Chat error for session {request.session_id}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Chat pipeline error. Please try again.",
+        )
+
+    await append_messages(
+        request.session_id,
+        [
+            {"role": "user",      "content": request.message},
+            {"role": "assistant", "content": reply},
+        ],
+    )
+
+    return ChatResponse(session_id=request.session_id, reply=reply)
 
 
 @app.post("/admin/rebuild-index", tags=["Admin"], status_code=status.HTTP_200_OK)
