@@ -14,20 +14,21 @@ import os
 import sys
 import time
 import uuid
+import httpx
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Header, HTTPException, Request, status
+from fastapi import FastAPI, Header, HTTPException, Request, status, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from db.client import append_messages, get_session_messages, save_triage_session
+from db.client import append_messages, get_session_messages, save_triage_session, get_client
 from rag.rag_pipeline import MedicalRAGPipeline
 from triage.triage_chain import run_chat, run_triage
 
@@ -62,11 +63,12 @@ app = FastAPI(
     ),
     version="1.0.0",
     lifespan=lifespan,
+    root_path="/api/v1",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # Restrict in production
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -95,8 +97,9 @@ class TriageRequest(BaseModel):
     visual_notes: Optional[str]    = Field(None, max_length=2000,
                                            description="Visual / physical observation notes")
 
-    @validator("symptoms")
-    def symptoms_not_blank(cls, v):
+    @field_validator("symptoms")
+    @classmethod
+    def symptoms_not_blank(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("symptoms must not be blank")
         return v.strip()
@@ -144,10 +147,49 @@ class HealthResponse(BaseModel):
     version:    str
 
 
+# ── New Request Schemas ────────────────────────────────────────────────────────
+
+class ConsentRequest(BaseModel):
+    user_id: Optional[str] = None
+    consent_items: list[str] = Field(..., description="List of consent items agreed to")
+
+class PatientRequest(BaseModel):
+    session_id: str
+    name: str
+    age: int
+    gender: str
+    mobile: str
+    conditions: Optional[list[str]] = []
+    allergies: Optional[str] = None
+
+class SymptomsRequest(BaseModel):
+    session_id: str
+    patient_id: str
+    symptoms: list[str]
+    duration: Optional[str] = None
+    severity: Optional[str] = None
+
+class VitalsRequest(BaseModel):
+    session_id: str
+    patient_id: str
+    heart_rate: Optional[int] = None
+    spo2: Optional[float] = None
+    blood_pressure: Optional[str] = None
+    temperature: Optional[float] = None
+    respiration_rate: Optional[int] = None
+    glucose: Optional[float] = None
+
+class OTPSendRequest(BaseModel):
+    mobile: str
+
+class OTPVerifyRequest(BaseModel):
+    mobile: str
+    otp: str
+
+
 # ── Admin auth dependency ──────────────────────────────────────────────────────
 
 async def require_admin_key(x_admin_key: Optional[str] = Header(None)):
-    """Validates the X-Admin-Key header against the ADMIN_API_KEY env var."""
     expected = os.environ.get("ADMIN_API_KEY")
     if not expected:
         raise HTTPException(
@@ -165,7 +207,6 @@ async def require_admin_key(x_admin_key: Optional[str] = Header(None)):
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
-    """Returns API health status and RAG readiness."""
     return HealthResponse(
         status="ok",
         rag_ready=rag_pipeline._retriever is not None,
@@ -177,15 +218,6 @@ async def health_check():
 @app.post("/triage", response_model=TriageResponse, tags=["Triage"],
           status_code=status.HTTP_200_OK)
 async def triage_patient(request: TriageRequest):
-    """
-    **Main triage endpoint.**
-
-    Accepts patient input (symptoms, vitals, report text, visual observations)
-    and returns an urgency classification with reasoning and next steps.
-
-    ⚠️ This endpoint is NOT a substitute for professional medical advice.
-    Always recommend the patient consult a licensed healthcare provider.
-    """
     t_start = time.perf_counter()
 
     try:
@@ -272,13 +304,6 @@ async def triage_patient(request: TriageRequest):
 @app.post("/chat", response_model=ChatResponse, tags=["Triage"],
           status_code=status.HTTP_200_OK)
 async def chat(request: ChatRequest):
-    """
-    **Follow-up chat within an existing triage session.**
-
-    Use the `session_id` returned by `POST /triage` to continue the conversation.
-    The AI remembers the full prior context and can reassess urgency if new
-    symptoms are reported.
-    """
     history = await get_session_messages(request.session_id)
     if history is None:
         raise HTTPException(
@@ -308,10 +333,6 @@ async def chat(request: ChatRequest):
 
 @app.post("/admin/rebuild-index", tags=["Admin"], status_code=status.HTTP_200_OK)
 async def rebuild_index(x_admin_key: Optional[str] = Header(None)):
-    """
-    Force-rebuilds the FAISS index from the knowledge base.
-    Requires a valid `X-Admin-Key` header matching the `ADMIN_API_KEY` env var.
-    """
     await require_admin_key(x_admin_key)
     try:
         rag_pipeline.build_or_load(force_rebuild=True)
@@ -322,6 +343,204 @@ async def rebuild_index(x_admin_key: Optional[str] = Header(None)):
             detail=f"Index rebuild failed: {str(exc)}",
         )
     return {"status": "ok", "message": "FAISS index rebuilt successfully."}
+
+
+# ── Kiosk Endpoints ────────────────────────────────────────────────────────────
+
+@app.post("/consent", tags=["Kiosk"], status_code=status.HTTP_200_OK)
+async def save_consent(request: ConsentRequest):
+    session_id = str(uuid.uuid4())
+    client = get_client()
+    client.table("consent").insert({
+        "session_id": session_id,
+        "user_id": request.user_id,
+        "consent_items": request.consent_items,
+    }).execute()
+    return {"success": True, "session_id": session_id}
+
+
+@app.post("/patient", tags=["Kiosk"], status_code=status.HTTP_200_OK)
+async def save_patient(request: PatientRequest):
+    patient_id = str(uuid.uuid4())
+    client = get_client()
+    client.table("patients").insert({
+        "id": patient_id,
+        "session_id": request.session_id,
+        "name": request.name,
+        "age": request.age,
+        "gender": request.gender,
+        "mobile": request.mobile,
+        "conditions": request.conditions,
+        "allergies": request.allergies,
+    }).execute()
+    return {"success": True, "patient_id": patient_id}
+
+
+@app.post("/symptoms", tags=["Kiosk"], status_code=status.HTTP_200_OK)
+async def save_symptoms(request: SymptomsRequest):
+    client = get_client()
+    client.table("symptoms").insert({
+        "session_id": request.session_id,
+        "patient_id": request.patient_id,
+        "symptoms": request.symptoms,
+        "duration": request.duration,
+        "severity": request.severity,
+    }).execute()
+    return {"success": True}
+
+
+@app.post("/vitals", tags=["Kiosk"], status_code=status.HTTP_200_OK)
+async def save_vitals(request: VitalsRequest):
+    client = get_client()
+    client.table("vitals").insert({
+        "session_id": request.session_id,
+        "patient_id": request.patient_id,
+        "heart_rate": request.heart_rate,
+        "spo2": request.spo2,
+        "blood_pressure": request.blood_pressure,
+        "temperature": request.temperature,
+        "respiration_rate": request.respiration_rate,
+        "glucose": request.glucose,
+    }).execute()
+    return {"success": True}
+
+
+@app.post("/visual-scan", tags=["Kiosk"], status_code=status.HTTP_200_OK)
+async def visual_scan(session_id: str = Form(...), patient_id: str = Form(...), image: UploadFile = File(...)):
+    image_bytes = await image.read()
+    async with httpx.AsyncClient(timeout=30) as http_client:
+        response = await http_client.post(
+            "https://mlservice-production-4d52.up.railway.app/visual/analyze?target=eyes",
+            files={"file": (image.filename, image_bytes, image.content_type)},
+        )
+    result = response.json()
+    return {"success": True, "findings": result}
+
+
+@app.post("/reports", tags=["Kiosk"], status_code=status.HTTP_200_OK)
+async def upload_reports(
+    session_id: str = Form(...),
+    patient_id: str = Form(...),
+    files: list[UploadFile] = File(...),
+    types: list[str] = Form(...),
+):
+    results = []
+    client = get_client()
+    async with httpx.AsyncClient(timeout=30) as http_client:
+        for file, file_type in zip(files, types):
+            file_bytes = await file.read()
+            if file_type == "blood":
+                response = await http_client.post(
+                    "https://mlservice-production-4d52.up.railway.app/ocr/process",
+                    files={"file": (file.filename, file_bytes, file.content_type)},
+                )
+            elif file_type == "xray":
+                response = await http_client.post(
+                    "https://mlservice-production-4d52.up.railway.app/xray/classify?target=chest",
+                    files={"file": (file.filename, file_bytes, file.content_type)},
+                )
+            else:
+                continue
+            result = response.json()
+            report_id = str(uuid.uuid4())
+            client.table("reports").insert({
+                "id": report_id,
+                "session_id": session_id,
+                "patient_id": patient_id,
+                "file_type": file_type,
+                "file_url": file.filename,
+            }).execute()
+            results.append({"report_id": report_id, "type": file_type, "result": result})
+    return {"success": True, "reportIds": [r["report_id"] for r in results]}
+
+
+@app.post("/analyse", tags=["Kiosk"], status_code=status.HTTP_200_OK)
+async def analyse(session_id: str):
+    client = get_client()
+    symptoms_data = client.table("symptoms").select("*").eq("session_id", session_id).execute()
+    vitals_data = client.table("vitals").select("*").eq("session_id", session_id).execute()
+    symptoms_row = symptoms_data.data[0] if symptoms_data.data else {}
+    vitals_row = vitals_data.data[0] if vitals_data.data else {}
+    symptoms_text = ", ".join(symptoms_row.get("symptoms", []))
+    if symptoms_row.get("duration"):
+        symptoms_text += f" for {symptoms_row['duration']}"
+    if symptoms_row.get("severity"):
+        symptoms_text += f". Severity: {symptoms_row['severity']}"
+    vitals_obj = None
+    if vitals_row:
+        vitals_obj = Vitals(
+            heart_rate=vitals_row.get("heart_rate"),
+            spo2=vitals_row.get("spo2"),
+            temperature=vitals_row.get("temperature"),
+        )
+    triage_request = TriageRequest(
+        symptoms=symptoms_text,
+        vitals=vitals_obj,
+    )
+    return await triage_patient(triage_request)
+
+
+@app.post("/voice-triage", tags=["Kiosk"], status_code=status.HTTP_200_OK)
+async def voice_triage(session_id: str = Form(...), audio: UploadFile = File(...)):
+    """
+    Accepts a patient's spoken symptoms as audio, sends it to Shreya's STT
+    service for transcription, then runs the transcribed text through the
+    triage engine.
+    """
+    audio_bytes = await audio.read()
+
+    async with httpx.AsyncClient(timeout=30) as http_client:
+        stt_response = await http_client.post(
+            "https://stt-tts-service-production.up.railway.app/transcribe",
+            files={"audio": (audio.filename, audio_bytes, audio.content_type)},
+        )
+
+    if stt_response.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="STT service failed to transcribe audio.",
+        )
+
+    stt_result = stt_response.json()
+    transcribed_text = stt_result.get("text") or stt_result.get("transcript")
+
+    if not transcribed_text:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="STT service returned no transcript.",
+        )
+
+    triage_request = TriageRequest(symptoms=transcribed_text)
+    triage_result = await triage_patient(triage_request)
+
+    return {
+        "success": True,
+        "transcript": transcribed_text,
+        "triage": triage_result,
+    }
+
+
+@app.post("/otp/send", tags=["Auth"], status_code=status.HTTP_200_OK)
+async def send_otp(request: OTPSendRequest):
+    import random
+    otp = str(random.randint(100000, 999999))
+    client = get_client()
+    client.table("users").upsert({
+        "mobile": request.mobile,
+        "otp": otp,
+    }).execute()
+    logger.info(f"OTP for {request.mobile}: {otp}")
+    return {"success": True}
+
+
+@app.post("/otp/verify", tags=["Auth"], status_code=status.HTTP_200_OK)
+async def verify_otp(request: OTPVerifyRequest):
+    client = get_client()
+    result = client.table("users").select("*").eq("mobile", request.mobile).eq("otp", request.otp).execute()
+    if not result.data:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+    user_id = result.data[0]["id"]
+    return {"success": True, "userId": user_id, "token": f"temp_token_{user_id}"}
 
 
 # ── Global exception handler ───────────────────────────────────────────────────

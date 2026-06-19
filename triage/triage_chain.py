@@ -209,7 +209,7 @@ async def run_triage(
     logger.info(f"Retrieval query: {retrieval_query[:120]}…")
 
     # 2. Retrieve relevant clinical guidelines (CPU-bound — run off event loop)
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         retrieved_docs = await loop.run_in_executor(None, retriever.invoke, retrieval_query)
     except Exception as exc:

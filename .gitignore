@@ -4,5 +4,6 @@ __pycache__/
 *.pyc
 *.pyo
 rag/faiss_index/
+ml_service/assets/
 *.egg-info/
 .DS_Store

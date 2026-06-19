@@ -85,5 +85,5 @@ async def classify_xray(file: UploadFile = File(...)):
 
 if __name__ == '__main__':
     import uvicorn
-    # Run server locally on port 8000
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    # Run server locally on port 8001 (api uses 8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=False)
