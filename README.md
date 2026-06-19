@@ -1,56 +1,74 @@
-# AI Medical Triage Platform
+# AI Medical Triage Engine
 
-An AI-assisted triage engine that classifies patient urgency using a **BM25 retrieval + LLM pipeline** built on LangChain, BM25, and NVIDIA Nemotron via OpenRouter.
+An AI-powered triage platform that guides patients through a structured kiosk flow — collecting consent, demographics, symptoms, vitals, and medical reports — then classifies urgency using a **BM25 RAG + LLM pipeline** and stores every session in Supabase.
 
-> ⚠️ **This system is NOT a diagnostic tool and does NOT replace a licensed medical professional.** It is designed to assist in triage prioritisation only.
+> **This system is NOT a diagnostic tool and does NOT replace a licensed medical professional.** It is designed to assist in triage prioritisation only.
+
+---
+
+## System Overview
+
+The platform is split into two independent FastAPI services:
+
+| Service | Port | Purpose |
+|---|---|---|
+| **Triage API** (`api/`) | 8000 | Kiosk flow, triage engine, chat, OTP auth |
+| **ML Service** (`ml_service/`) | 8001 | Blood report OCR, chest X-ray classification |
+
+Both services are deployed on Railway and communicate over HTTP.
 
 ---
 
 ## Architecture
 
 ```
-Patient Input (symptoms, vitals, report text, visual notes)
+Patient (Kiosk / Mobile)
          │
          ▼
-┌─────────────────────────────────────────────────────────┐
-│                    FastAPI Endpoint                     │
-│                    api/main.py                          │
-└───────────────────────┬─────────────────────────────────┘
-                        │
-          ┌─────────────┴────────────┐
-          ▼                          ▼
-┌──────────────────┐      ┌──────────────────────────┐
-│   RAG Pipeline   │      │      Triage Chain         │
-│  rag/rag_pipeline│      │  triage/triage_chain.py   │
-│                  │      │                           │
-│  BM25 Retriever  │─────▶│  Retrieved context +      │
-│  (pure Python,   │      │  patient input →          │
-│   no ML deps)    │      │  NVIDIA Nemotron via      │
-└──────────────────┘      │  OpenRouter               │
-          ▲               └──────────┬────────────────┘
-          │                          │
-┌──────────────────┐                 ▼
-│  Knowledge Base  │      ┌──────────────────────────┐
-│  knowledge_base/ │      │    Structured Result      │
-│  medical_        │      │  urgency_level            │
-│  guidelines.py   │      │  reasoning                │
-└──────────────────┘      │  next_steps               │
-                          │  red_flags                │
-                          └──────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Triage API  (port 8000)                  │
+│                                                                 │
+│  /otp/*  ──► Auth (Supabase users table)                        │
+│  /consent, /patient, /symptoms, /vitals  ──► Supabase tables    │
+│  /visual-scan, /reports  ──► ML Service (port 8001)             │
+│  /analyse  ──► RAG Pipeline + LLM (OpenRouter / Nemotron)       │
+│  /voice-triage  ──► STT Service ──► /analyse                    │
+│  /triage, /chat  ──► RAG Pipeline + LLM (direct)               │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              ▼                             ▼
+┌──────────────────────┐      ┌─────────────────────────────────┐
+│   ML Service (8001)  │      │         Supabase (DB)            │
+│                      │      │                                  │
+│  POST /ocr/process   │      │  consent, patients, symptoms,    │
+│  POST /xray/classify │      │  vitals, reports, users,         │
+│  POST /visual/analyze│      │  triage_sessions                 │
+└──────────────────────┘      └─────────────────────────────────┘
 ```
 
-### Project structure
+---
+
+## Project Structure
 
 ```
 triage-engine/
 ├── api/
-│   └── main.py                  # FastAPI app — endpoints, request/response schemas
+│   └── main.py                  # FastAPI app — all endpoints, schemas, middleware
+├── triage/
+│   └── triage_chain.py          # RAG context injection + LLM prompt + response parsing
 ├── rag/
 │   └── rag_pipeline.py          # BM25 retriever built from knowledge base
-├── triage/
-│   └── triage_chain.py          # LLM prompt, RAG context injection, response parsing
 ├── knowledge_base/
-│   └── medical_guidelines.py    # 10 clinical triage guideline documents
+│   └── medical_guidelines.py    # Clinical triage guideline documents
+├── db/
+│   └── client.py                # Supabase client + async persistence helpers
+├── ml_service/
+│   ├── main.py                  # ML FastAPI service (OCR + X-ray)
+│   ├── ocr_engine.py            # EasyOCR extraction + regex metric parsing
+│   ├── xray_engine.py           # ViT-based pneumonia classifier
+│   └── templates/index.html     # ML service web dashboard
+├── railway.toml                 # Railway deployment config
 ├── requirements.txt
 ├── env.example
 └── README.md
@@ -60,191 +78,304 @@ triage-engine/
 
 ## Quickstart
 
-### 1. Prerequisites
+### Prerequisites
 
 - Python 3.11+
-- An [OpenRouter API key](https://openrouter.ai/keys)
+- [OpenRouter API key](https://openrouter.ai/keys)
+- Supabase project (URL + anon key)
 
-### 2. Clone and enter the project
+### 1. Clone and enter the project
 
 ```bash
 git clone https://github.com/SystemaOps/Triage-Engine.git
 cd Triage-Engine
 ```
 
-### 3. Create a virtual environment
+### 2. Create a virtual environment
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 ```
 
-### 4. Install dependencies
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 5. Set your API key
+### 4. Configure environment
 
 ```bash
 cp env.example .env
-# Edit .env and set OPENROUTER_API_KEY=sk-or-v1-...
+# Fill in the values below
 ```
 
-Or export directly:
+| Variable | Required | Description |
+|---|---|---|
+| `OPENROUTER_API_KEY` | Yes | Your OpenRouter API key |
+| `SUPABASE_URL` | Yes | Your Supabase project URL |
+| `SUPABASE_KEY` | Yes | Your Supabase anon/service key |
+| `ADMIN_API_KEY` | Yes | Key for `/admin/rebuild-index` |
+| `LLM_MODEL` | No | Defaults to `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` |
+| `RAG_TOP_K` | No | Guidelines to retrieve per query (default: `4`) |
+| `LOG_LEVEL` | No | Logging verbosity (default: `INFO`) |
+
+### 5. Run the Triage API
 
 ```bash
-export OPENROUTER_API_KEY=sk-or-v1-your-key-here
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 6. Run the API
+### 6. Run the ML Service (separate terminal)
 
 ```bash
-cd api
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+cd ml_service
+python main.py          # runs on port 8001
 ```
 
-The BM25 index builds instantly from the knowledge base on startup.
-
-The API is now available at `http://localhost:8000`.  
-Interactive docs: `http://localhost:8000/docs`
+Swagger docs available at `http://localhost:8000/docs` and `http://localhost:8001/docs`.
 
 ---
 
 ## API Reference
 
-### `POST /triage`
+All Triage API routes are prefixed with `/api/v1` in production (via `root_path`).
 
-Classifies patient urgency.
+### Auth
 
-**Request body**
+#### `POST /otp/send`
+Send a one-time password to a mobile number.
+
+```json
+{ "mobile": "+919876543210" }
+```
+
+#### `POST /otp/verify`
+Verify the OTP and receive a user token.
+
+```json
+{ "mobile": "+919876543210", "otp": "482910" }
+```
+
+Response:
+```json
+{ "success": true, "userId": "uuid", "token": "temp_token_uuid" }
+```
+
+---
+
+### Kiosk Flow
+
+The kiosk collects patient data across these steps in order:
+
+#### `POST /consent`
+Record consent items. Returns a new `session_id` that ties the rest of the session together.
 
 ```json
 {
-  "symptoms": "Severe chest pain radiating to my left arm, sweating, nausea — started 20 minutes ago.",
+  "user_id": "optional-user-id",
+  "consent_items": ["I agree to terms", "I consent to data processing"]
+}
+```
+
+#### `POST /patient`
+Save patient demographics.
+
+```json
+{
+  "session_id": "uuid",
+  "name": "Jane Doe",
+  "age": 34,
+  "gender": "Female",
+  "mobile": "+919876543210",
+  "conditions": ["diabetes", "hypertension"],
+  "allergies": "penicillin"
+}
+```
+
+#### `POST /symptoms`
+Record presenting symptoms.
+
+```json
+{
+  "session_id": "uuid",
+  "patient_id": "uuid",
+  "symptoms": ["chest pain", "shortness of breath"],
+  "duration": "2 hours",
+  "severity": "severe"
+}
+```
+
+#### `POST /vitals`
+Record patient vitals.
+
+```json
+{
+  "session_id": "uuid",
+  "patient_id": "uuid",
+  "heart_rate": 110,
+  "spo2": 94.5,
+  "blood_pressure": "140/90",
+  "temperature": 37.8,
+  "respiration_rate": 22,
+  "glucose": 180.0
+}
+```
+
+#### `POST /visual-scan`
+Multipart upload — sends the image to the ML service for eye/visual analysis.
+
+```
+Form fields: session_id, patient_id
+File field:  image (PNG/JPG)
+```
+
+#### `POST /reports`
+Upload one or more medical reports for processing. Supports `blood` (OCR) and `xray` (classification).
+
+```
+Form fields: session_id, patient_id, types[] (e.g. ["blood", "xray"])
+File field:  files[] (PNG/JPG)
+```
+
+#### `POST /analyse?session_id=uuid`
+Runs the full triage engine on data already saved for the session — pulls symptoms and vitals from Supabase, builds the triage request, and returns an urgency classification.
+
+---
+
+### Triage Engine (Direct)
+
+#### `POST /triage`
+
+```json
+{
+  "symptoms": "Severe chest pain radiating to left arm, started 20 minutes ago.",
   "vitals": {
     "heart_rate": 118,
     "spo2": 94,
     "blood_pressure": { "systolic": 88, "diastolic": 60 },
     "temperature": 37.2
   },
-  "report_text": "ECG report: ST elevation in leads II, III, aVF. Troponin pending.",
+  "report_text": "ECG: ST elevation in leads II, III, aVF.",
   "visual_notes": "Patient appears pale and diaphoretic."
 }
 ```
 
-| Field          | Type     | Required | Description |
-|----------------|----------|----------|-------------|
-| `symptoms`     | string   | ✅        | Chief complaint / symptom description (3–4000 chars) |
-| `vitals`       | object   | ❌        | Heart rate (bpm), SpO2 (%), blood pressure (mmHg), temperature (°C) |
-| `report_text`  | string   | ❌        | OCR-extracted text from uploaded medical reports |
-| `visual_notes` | string   | ❌        | Free-text visual/physical observations |
-
-**Response**
+Response:
 
 ```json
 {
   "urgency_level": "emergency_referral",
-  "reasoning": "The patient presents with classic STEMI symptoms — crushing chest pain radiating to the left arm with diaphoresis and nausea. Haemodynamic compromise is evident (BP 88/60, HR 118). ST elevation noted on ECG report further confirms the emergency nature of this presentation.",
-  "next_steps": "Call 911/999 immediately. Do not drive to hospital. Chew 300mg aspirin if not contraindicated. Have someone stay with the patient until emergency services arrive.",
-  "red_flags": [
-    "Chest pain radiating to the left arm",
-    "Diaphoresis (sweating) with chest pain",
-    "Hypotension: BP 88/60 mmHg",
-    "Tachycardia: HR 118 bpm",
-    "ST elevation on ECG"
-  ],
-  "disclaimer": "⚠️ This assessment is generated by an AI triage assistant and is NOT a medical diagnosis...",
+  "reasoning": "...",
+  "next_steps": "Call 911 immediately...",
+  "red_flags": ["Chest pain radiating to left arm", "Hypotension: BP 88/60"],
+  "disclaimer": "...",
   "latency_ms": 8521
 }
 ```
 
 **Urgency levels**
 
-| Level                  | Meaning |
-|------------------------|---------|
-| `self_care`            | Manageable at home — rest, OTC medication, watchful waiting |
-| `doctor_consultation`  | GP/primary care within 24–48 hours |
-| `urgent_care`          | Same-day urgent care or ED walk-in |
-| `emergency_referral`   | Call 911/999 or go to ED immediately |
+| Level | Meaning |
+|---|---|
+| `self_care` | Manageable at home |
+| `doctor_consultation` | GP within 24–48 hours |
+| `urgent_care` | Same-day urgent care or ED walk-in |
+| `emergency_referral` | Call 911 / go to ED immediately |
+
+#### `POST /chat`
+Continue a conversation within an existing triage session using the `session_id` from `/triage`.
+
+```json
+{ "session_id": "uuid", "message": "The pain is getting worse." }
+```
 
 ---
 
-### `GET /health`
+### Voice Triage
 
-```json
-{
-  "status": "ok",
-  "rag_ready": true,
-  "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-  "version": "1.0.0"
-}
+#### `POST /voice-triage`
+Accepts a patient's spoken symptoms as audio, transcribes via an external STT service, then runs triage.
+
+```
+Form fields: session_id
+File field:  audio (WAV/MP3/etc.)
 ```
 
-### `POST /admin/rebuild-index`
+Response includes both the transcript and the full triage result.
 
+---
+
+### System
+
+#### `GET /health`
+
+```json
+{ "status": "ok", "rag_ready": true, "model": "nvidia/...", "version": "1.0.0" }
+```
+
+#### `POST /admin/rebuild-index`
 Force-rebuilds the BM25 index from the knowledge base. Requires `X-Admin-Key` header.
 
 ---
 
-## Sample `curl` requests
+## ML Service API
 
-```bash
-# Minimal request — symptoms only
-curl -s -X POST http://localhost:8000/triage \
-  -H "Content-Type: application/json" \
-  -d '{"symptoms": "I have a mild sore throat and runny nose for 2 days, no fever."}' | python3 -m json.tool
+The ML service runs independently on port 8001.
 
-# Full request with vitals
-curl -s -X POST http://localhost:8000/triage \
-  -H "Content-Type: application/json" \
-  -d '{
-    "symptoms": "Sudden worst headache of my life, came on in seconds, stiff neck, sensitive to light.",
-    "vitals": {"heart_rate": 90, "spo2": 98, "temperature": 38.8},
-    "visual_notes": "Appears confused and photophobic"
-  }' | python3 -m json.tool
-```
+#### `POST /ocr/process`
+Upload a blood report image. Returns extracted text and parsed metrics (glucose, WBC, haemoglobin).
+
+#### `POST /xray/classify`
+Upload a chest X-ray. Returns pathology classification and confidence score (ViT model, 92% confidence on pneumonia).
+
+#### `GET /`
+Interactive web dashboard for drag-and-drop testing.
 
 ---
 
-## Extending the knowledge base
+## Database (Supabase)
 
-Add entries to `knowledge_base/medical_guidelines.py` following the existing schema:
+| Table | Purpose |
+|---|---|
+| `users` | Mobile number + OTP for auth |
+| `consent` | Consent records keyed by session |
+| `patients` | Demographics per session |
+| `symptoms` | Symptom list, duration, severity |
+| `vitals` | Physiological measurements |
+| `reports` | Uploaded report metadata |
+| `triage_sessions` | Full triage output + message history |
+
+---
+
+## Deployment (Railway)
+
+The `railway.toml` configures the Triage API start command:
+
+```toml
+[deploy]
+startCommand = "uvicorn api.main:app --host 0.0.0.0 --port 8000"
+```
+
+The ML service is deployed as a separate Railway service at `https://mlservice-production-4d52.up.railway.app`.
+
+---
+
+## Extending the Knowledge Base
+
+Add entries to `knowledge_base/medical_guidelines.py`:
 
 ```python
 {
     "id":       "unique_id",
     "title":    "Document Title",
     "category": "specialty_tag",
-    "content":  "Full text of the clinical guideline …",
+    "content":  "Full text of the clinical guideline...",
 }
 ```
 
 Then call `POST /admin/rebuild-index` or restart the server.
-
----
-
-## Configuration
-
-| Environment variable  | Default                                            | Description              |
-|-----------------------|----------------------------------------------------|--------------------------|
-| `OPENROUTER_API_KEY`  | *(required)*                                       | Your OpenRouter API key  |
-| `ADMIN_API_KEY`       | *(required for /admin/rebuild-index)*              | Admin endpoint key       |
-| `LLM_MODEL`           | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | Model string via OpenRouter |
-| `RAG_TOP_K`           | `4`                                                | Guidelines to retrieve   |
-| `LOG_LEVEL`           | `INFO`                                             | Logging verbosity        |
-
----
-
-## Production considerations
-
-- **Replace sample knowledge base** with validated clinical guidelines (e.g. Manchester Triage System, ESI protocols, NICE guidelines).
-- **Add authentication** to the `/triage` endpoint (OAuth2 / API key middleware).
-- **Rate-limit** the endpoint to prevent abuse.
-- **Restrict CORS** — remove `allow_origins=["*"]` and specify your frontend domain.
-- **Log and audit** all triage requests for clinical governance and safety review.
-- **Never expose raw LLM outputs** to patients without human-in-the-loop review in regulated environments.
 
 ---
 
