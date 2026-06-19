@@ -1,9 +1,8 @@
-.venv/
-.env
-__pycache__/
-*.pyc
-*.pyo
-rag/faiss_index/
-ml_service/assets/
-*.egg-info/
+node_modules/
+build/
+dist/
+coverage/
 .DS_Store
+*.log
+.env*
+!.env.example

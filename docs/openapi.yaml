@@ -1,0 +1,843 @@
+openapi: "3.0.3"
+info:
+  title: "Medical Triage Admin Portal — Express REST API"
+  description: |
+    REST API for semantic triage case search and vector index management.
+
+    This API powers the Admin Portal's vector search features and the
+    file ingestion pipeline (server/services/fileWatcher.ts). It runs
+    alongside the React SPA on the Express backend.
+
+    ## Authentication
+
+    All `/api/vector/*` routes are protected by Bearer token auth.
+    Set `ADMIN_API_KEY` in `.env` to enable authentication. Without it,
+    all requests are allowed in local dev mode.
+
+    ## Import into Postman / Insomnia
+
+    - **Postman**: File → Import → select this file
+    - **Insomnia**: Application → Preferences → Import Data
+    - **Swagger UI**: Point to `/api-docs` (not yet deployed)
+
+    The base URL defaults to `http://localhost:5001`. Change the
+    `servers[0].url` value for staging/production.
+
+    ## Related Documentation
+
+    - Integration audit checklist: `docs/INTEGRATION_CHECKLIST.md`
+    - LLM inference contract: `docs/LLM_TRIAGE_API_CONTRACT.md`
+    - Server source: `server/index.ts`
+    - Routes: `server/routes/vectorRoutes.ts`
+
+  version: "1.0.0"
+  contact:
+    name: "Admin Portal Team"
+
+servers:
+  - url: "http://localhost:5001"
+    description: "Local development server"
+  - url: "https://api.apexhealth.internal"
+    description: "Staging/Production (update URL)"
+
+# ── Security Schemes ──
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API_KEY
+      description: |
+        Shared secret set via `ADMIN_API_KEY` in `.env`.
+        If `ADMIN_API_KEY` is not configured, auth is skipped (local dev mode).
+    Unauthenticated:
+      type: apiKey
+      in: header
+      name: X-No-Auth
+      description: "No authentication required (health/ready probes only)"
+
+  # ── Reusable Schemas ──
+  schemas:
+    # ── Common ──
+    ErrorResponse:
+      type: object
+      description: "Standard error payload returned by all endpoints."
+      properties:
+        error:
+          type: string
+          description: "Machine-readable error code."
+          example: "INVALID_ARGUMENT"
+        message:
+          type: string
+          description: "Human-readable error description."
+          example: "'query' must be a non-empty string."
+      required:
+        - error
+        - message
+
+    ServerError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "INTERNAL_SERVER_ERROR"
+        message:
+          type: string
+          example: "An internal error occurred."
+
+    NotFoundError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "NOT_FOUND"
+        message:
+          type: string
+          example: "Route not found."
+
+    # ── Health / Readiness ──
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: "ok"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-06-08T12:00:00.000Z"
+
+    ReadinessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+          example: "healthy"
+        timestamp:
+          type: string
+          format: date-time
+        checks:
+          type: object
+          properties:
+            server:
+              type: boolean
+            nodeEnv:
+              type: string
+            openaiKeySet:
+              type: boolean
+            pineconeKeySet:
+              type: boolean
+            pineconeIndex:
+              type: string
+            pineconeReachable:
+              type: boolean
+            vectorCount:
+              type: string
+
+    # ── Vector Search ──
+    VectorSearchRequest:
+      type: object
+      description: "Semantic search query across indexed triage cases."
+      properties:
+        query:
+          type: string
+          description: "Natural language search query."
+          example: "chest pain with shortness of breath"
+        topK:
+          type: integer
+          description: "Maximum number of results to return."
+          default: 10
+          minimum: 1
+          maximum: 100
+          example: 10
+        filter:
+          type: object
+          description: "Optional Pinecone metadata filter."
+          example:
+            status:
+              $eq: "Escalated"
+            sourceType:
+              $eq: "patient"
+      required:
+        - query
+
+    VectorSearchResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        query:
+          type: string
+          example: "chest pain with shortness of breath"
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/VectorMatch"
+      required:
+        - success
+        - matches
+        - query
+
+    VectorMatch:
+      type: object
+      properties:
+        id:
+          type: string
+          description: "Firestore document ID (prefixed with `report_` for reports)."
+          example: "CASE-1001"
+        score:
+          type: number
+          format: float
+          description: "Cosine similarity score (0–1). Higher is more similar."
+          example: 0.89
+        metadata:
+          $ref: "#/components/schemas/VectorMatchMetadata"
+
+    VectorMatchMetadata:
+      type: object
+      properties:
+        patientName:
+          type: string
+          example: "Michael Chen"
+        triageCategory:
+          type: string
+          example: "Emergency"
+        status:
+          type: string
+          example: "Escalated"
+        confidence:
+          type: number
+          format: float
+          example: 0.98
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-06-08T10:00:00.000Z"
+        sourceType:
+          type: string
+          enum: [patient, report]
+          example: "patient"
+        reportCategory:
+          type: string
+          nullable: true
+          example: null
+        subType:
+          type: string
+          nullable: true
+          example: null
+        verified:
+          type: boolean
+          nullable: true
+          example: null
+        clinicianOverride:
+          type: string
+          nullable: true
+          example: null
+
+    # ── Similar Case ──
+    SimilarCaseRequest:
+      type: object
+      description: "Find cases similar to a given case's text content."
+      properties:
+        caseText:
+          type: string
+          description: "Pre-built search text (e.g., from buildCaseSearchText)."
+          example: "Patient: Michael Chen\nTriage Category: Emergency\nStatus: Escalated\nReason: ECG abnormal — immediate cardiology consult required"
+        topK:
+          type: integer
+          description: "Maximum number of similar results."
+          default: 5
+          minimum: 1
+          maximum: 50
+      required:
+        - caseText
+
+    SimilarCaseResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/VectorMatch"
+
+    # ── Index All ──
+    IndexAllRequest:
+      type: object
+      description: |
+        Batch index triage cases into Pinecone.
+
+        **Dual-mode:**
+        - With `patients`/`reports` in body → process those records
+        - Without them → auto-fetch from Firestore via Admin SDK (requires `FIREBASE_PROJECT_ID`)
+      properties:
+        patients:
+          type: array
+          description: "Array of patient records to index."
+          items:
+            $ref: "#/components/schemas/IndexPatientRecord"
+        reports:
+          type: array
+          description: "Array of report records to index."
+          items:
+            $ref: "#/components/schemas/IndexReportRecord"
+
+    IndexPatientRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "CASE-1001"
+        text:
+          type: string
+          description: "Search text built via buildCaseSearchText()."
+          example: "Patient: Michael Chen\nTriage Category: Emergency\nStatus: Escalated"
+        metadata:
+          type: object
+          properties:
+            patientName:
+              type: string
+            triageCategory:
+              type: string
+            status:
+              type: string
+            confidence:
+              type: number
+            timestamp:
+              type: string
+              format: date-time
+            sourceType:
+              type: string
+              enum: [patient]
+
+    IndexReportRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "report_case-2001"
+        text:
+          type: string
+        metadata:
+          type: object
+          properties:
+            patientName:
+              type: string
+            triageCategory:
+              type: string
+            status:
+              type: string
+            confidence:
+              type: number
+            timestamp:
+              type: string
+              format: date-time
+            sourceType:
+              type: string
+              enum: [report]
+            reportCategory:
+              type: string
+            subType:
+              type: string
+            verified:
+              type: boolean
+              nullable: true
+            clinicianOverride:
+              type: string
+              nullable: true
+
+    IndexAllResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        indexedCount:
+          type: integer
+          description: "Total vectors upserted in this batch."
+          example: 14
+        totalInIndex:
+          type: integer
+          description: "Total vectors now in the Pinecone index."
+          example: 42
+        patientsIndexed:
+          type: integer
+          example: 6
+        reportsIndexed:
+          type: integer
+          example: 8
+
+    # ── Index Single ──
+    IndexSingleRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "CASE-1001"
+        text:
+          type: string
+          example: "Patient: Michael Chen\nTriage Category: Emergency"
+        metadata:
+          type: object
+          properties:
+            patientName:
+              type: string
+            triageCategory:
+              type: string
+            status:
+              type: string
+            confidence:
+              type: number
+            timestamp:
+              type: string
+              format: date-time
+            sourceType:
+              type: string
+              enum: [patient, report]
+      required:
+        - id
+        - text
+
+    IndexSingleResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+
+    # ── Delete Vectors ──
+    DeleteVectorsRequest:
+      type: object
+      properties:
+        ids:
+          type: array
+          description: "Vector IDs to delete from the Pinecone index."
+          items:
+            type: string
+          example:
+            - "CASE-1001"
+            - "report_CASE-2001"
+      required:
+        - ids
+
+    DeleteVectorsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        deletedCount:
+          type: integer
+          example: 2
+
+    # ── Vector Stats ──
+    VectorStatsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        totalVectors:
+          type: integer
+          description: "Total number of records in the Pinecone index."
+          example: 42
+
+  # ── Reusable Responses ──
+  responses:
+    Unauthorized:
+      description: "Missing or malformed Authorization header."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: "UNAUTHORIZED"
+            message: "Missing or malformed Authorization header. Expected: Bearer <API_KEY>"
+
+    Forbidden:
+      description: "Invalid API key."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: "FORBIDDEN"
+            message: "Invalid API key."
+
+    InternalError:
+      description: "Unexpected server error."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ServerError"
+          example:
+            error: "INTERNAL_SERVER_ERROR"
+            message: "An internal error occurred."
+
+# ── API Paths ──
+paths:
+  # ── Health & Readiness ──
+  /health:
+    get:
+      tags:
+        - "Infrastructure"
+      summary: "Liveness probe"
+      description: "Lightweight health check for load balancers and orchestration."
+      operationId: "getHealth"
+      security: []
+      responses:
+        "200":
+          description: "Server is alive."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /ready:
+    get:
+      tags:
+        - "Infrastructure"
+      summary: "Readiness probe"
+      description: |
+        Deep readiness check. Verifies that required environment variables
+        are set (OPENAI_API_KEY, PINECONE_API_KEY) and optionally pings
+        Pinecone to confirm the index is reachable.
+      operationId: "getReady"
+      security: []
+      responses:
+        "200":
+          description: "All essential services are configured and reachable."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          description: "One or more essential services are unavailable."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+
+  # ── Vector Search ──
+  /api/vector/search:
+    post:
+      tags:
+        - "Vector Search"
+      summary: "Semantic search across triage cases"
+      description: |
+        Performs a semantic search across indexed triage cases.
+
+        1. Generates an embedding for the query text via OpenAI
+        2. Queries the Pinecone index for the most similar vectors
+        3. Returns matches with metadata and similarity scores
+      operationId: "searchVectors"
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VectorSearchRequest"
+            examples:
+              basic:
+                summary: "Basic search by symptom"
+                value:
+                  query: "chest pain with shortness of breath"
+                  topK: 10
+              filtered:
+                summary: "Filtered by status"
+                value:
+                  query: "cardiology consult"
+                  topK: 5
+                  filter:
+                    status:
+                      $eq: "Escalated"
+                    sourceType:
+                      $eq: "patient"
+      responses:
+        "200":
+          description: "Search results returned successfully."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VectorSearchResponse"
+              example:
+                success: true
+                query: "chest pain with shortness of breath"
+                matches:
+                  - id: "CASE-1001"
+                    score: 0.89
+                    metadata:
+                      patientName: "Michael Chen"
+                      triageCategory: "Emergency"
+                      status: "Escalated"
+                      confidence: 0.98
+                      timestamp: "2026-06-08T10:00:00.000Z"
+                      sourceType: "patient"
+                      reportCategory: null
+                      subType: null
+                      verified: null
+                      clinicianOverride: null
+        "400":
+          description: "Invalid request — query is empty or missing."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "Missing or malformed Authorization header."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: "Invalid API key."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "Internal server error."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerError"
+
+  /api/vector/similar:
+    post:
+      tags:
+        - "Vector Search"
+      summary: "Find similar cases"
+      description: |
+        Finds triage cases similar to a given case's text content.
+
+        Useful for clinical decision support — given a patient's triage
+        notes, find historically similar cases and their outcomes.
+      operationId: "getSimilarCases"
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimilarCaseRequest"
+            examples:
+              basic:
+                summary: "Similar to an emergency case"
+                value:
+                  caseText: "Patient: Michael Chen\nTriage Category: Emergency\nStatus: Escalated\nReason: ECG abnormal — immediate cardiology consult required"
+                  topK: 5
+      responses:
+        "200":
+          description: "Similar cases returned successfully."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimilarCaseResponse"
+        "400":
+          description: "Invalid request — caseText is empty or missing."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── Index Management ──
+  /api/vector/index-all:
+    post:
+      tags:
+        - "Index Management"
+      summary: "Batch index triage cases"
+      description: |
+        Batch indexes triage cases into Pinecone.
+
+        **Dual-mode:**
+        - **Mode A (explicit data):** Provide `patients` and/or `reports`
+          in the request body. Each record must have `id`, `text`, and
+          optional `metadata`.
+        - **Mode B (Firestore):** Send an empty body. The server fetches
+          all patients and reports from Firestore via the Admin SDK
+          (requires `FIREBASE_PROJECT_ID` and service account credentials).
+
+        Used by the file ingestion watcher (`server/services/fileWatcher.ts`)
+        to pipe validated clinical data into the vector index.
+      operationId: "indexAllVectors"
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IndexAllRequest"
+            examples:
+              modeA:
+                summary: "Mode A — Provide data directly"
+                value:
+                  patients:
+                    - id: "CASE-1001"
+                      text: "Patient: Michael Chen\nTriage Category: Emergency\nStatus: Escalated"
+                      metadata:
+                        patientName: "Michael Chen"
+                        triageCategory: "Emergency"
+                        status: "Escalated"
+                        confidence: 0.98
+                        timestamp: "2026-06-08T10:00:00.000Z"
+                        sourceType: "patient"
+              modeB:
+                summary: "Mode B — Fetch from Firestore (empty body)"
+                value: {}
+      responses:
+        "200":
+          description: "Batch indexing completed successfully."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IndexAllResponse"
+              example:
+                success: true
+                indexedCount: 14
+                totalInIndex: 42
+                patientsIndexed: 6
+                reportsIndexed: 8
+        "503":
+          description: "Firestore unavailable (Mode B with no credentials)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/vector/index:
+    post:
+      tags:
+        - "Index Management"
+      summary: "Index a single triage case"
+      description: |
+        Indexes a single triage case into Pinecone.
+
+        Generates an embedding from the provided text and upserts
+        it to the Pinecone index with associated metadata.
+      operationId: "indexVector"
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IndexSingleRequest"
+            example:
+              id: "CASE-1001"
+              text: "Patient: Michael Chen\nTriage Category: Emergency"
+              metadata:
+                patientName: "Michael Chen"
+                triageCategory: "Emergency"
+                status: "Escalated"
+                confidence: 0.98
+                timestamp: "2026-06-08T10:00:00.000Z"
+                sourceType: "patient"
+      responses:
+        "200":
+          description: "Vector indexed successfully."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IndexSingleResponse"
+        "400":
+          description: "Invalid request — id or text is missing."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/vector:
+    delete:
+      tags:
+        - "Index Management"
+      summary: "Delete vectors by ID"
+      description: "Deletes one or more vectors from the Pinecone index by their document IDs."
+      operationId: "deleteVectors"
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteVectorsRequest"
+            example:
+              ids:
+                - "CASE-1001"
+                - "report_CASE-2001"
+      responses:
+        "200":
+          description: "Vectors deleted successfully."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteVectorsResponse"
+              example:
+                success: true
+                deletedCount: 2
+        "400":
+          description: "Invalid request — ids is empty or not an array."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/vector/stats:
+    get:
+      tags:
+        - "Index Management"
+      summary: "Get vector index stats"
+      description: "Returns the total number of records in the Pinecone index."
+      operationId: "getVectorStats"
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: "Vector stats returned successfully."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VectorStatsResponse"
+              example:
+                success: true
+                totalVectors: 42
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+

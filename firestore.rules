@@ -1,0 +1,155 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Global Helper Functions ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function getUserRole() {
+      return request.auth.token.role;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (getUserRole() == 'admin' || getUserRole() == 'System Admin');
+    }
+
+    function isOperator() {
+      return isAuthenticated() && (getUserRole() == 'operator' || isAdmin());
+    }
+
+    function isDoctor() {
+      return isAuthenticated() && (getUserRole() == 'doctor' || isAdmin());
+    }
+
+    function isAnalyst() {
+      return isAuthenticated() && (getUserRole() == 'analyst' || isAdmin());
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // --- Global Default Deny ---
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Users Collection ---
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow update: if isAuthenticated() && isOwner(userId) && incoming().role == existing().role
+                       && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'displayName']);
+      allow create: if false; // Users created via server/admin
+    }
+
+    // --- Organizations Collection: Read for all authenticated, Write for admins only ---
+    match /organizations/{orgId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // --- Regions Collection: Read for all authenticated, Write for admins only ---
+    match /regions/{regionId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // --- Facilities Collection: Read for all authenticated, Write for admins ---
+    match /facilities/{facilityId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // --- Kiosks Fleet: Hardware edge nodes ---
+    match /kiosks/{kioskId} {
+      allow read: if isAuthenticated();
+      // Provisioning (create) requires admin
+      allow create: if isAdmin() && isValidId(kioskId);
+      // Status and queue updates allowed for authenticated operators/admins
+      allow update: if isAuthenticated() && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'currentQueue', 'updatedAt']) ||
+        isAdmin()
+      );
+      // Deletion requires admin
+      allow delete: if isAdmin();
+    }
+
+    // --- Model Weights: Neural inference layer configuration ---
+    match /modelWeights/{modelId} {
+      allow read: if isAuthenticated();
+      // Create/update/delete restricted to admins only (production model shifts are critical)
+      allow create, update, delete: if isAdmin();
+    }
+
+    // --- Patients Collection ---
+    match /patients/{patientId} {
+      allow list, get: if isAuthenticated() && (isAdmin() || isDoctor() || isAnalyst());
+      allow create, update: if isAuthenticated() && isDoctor();
+
+      // --- TraceEvents Subcollection: Append-only audit trail per patient ---
+      match /traceEvents/{eventId} {
+        allow read: if isAuthenticated() && (isAdmin() || isDoctor());
+        allow create: if isAuthenticated(); // Allow create for audit logs
+        allow update, delete: if false; // Immutable once created
+      }
+    }
+
+    // --- Immutable Audit Ledger: Strictly append-only, never modify or delete ---
+    match /auditLogs/{logId} {
+      // Read allowed for all authenticated users (compliance audit access)
+      allow read: if isAuthenticated();
+
+      // Create allowed for any authenticated user + must include txHash (immutability marker)
+      allow create: if isAuthenticated() && 
+                       incoming().txHash != null &&
+                       incoming().txHash is string &&
+                       incoming().createdAt is timestamp &&
+                       incoming().severity in ['info', 'warning', 'critical'];
+
+      // UNALTERABLE: Updates and deletions are permanently blocked
+      allow update, delete: if false;
+    }
+
+    // --- Notifications Collection ---
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    // --- System Health Collection ---
+    match /systemHealth/{healthId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // --- Settings Collection ---
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}
