@@ -8,7 +8,7 @@ export default function SettingsManagementView({ userRole }: { userRole: Role })
   const [settings, setSettings] = useState<{
     clinicalThresholds: { spo2: number; heartRate: number; bloodPressure: number; temperature: number; glucose: number };
     escalationRules: { selfCare: string; doctorConsultation: string; urgentCare: string; emergency: string };
-    aiConfig: { confidenceThreshold: number; humanReviewThreshold: number; autoEscalation: boolean };
+    aiConfig: { confidenceThreshold: number; humanReviewThreshold: number; autoEscalation: boolean; retrainThresholds: { minAgreementRate: number; minVerifiedSampleSize: number; maxCategoryDriftShare: number; evaluationWindowDays: number } };
     notificationSettings: { emailAlerts: boolean; smsAlerts: boolean; criticalOnly: boolean };
     auditSettings: { retentionDays: number; exportPolicy: string };
   } | null>(null);
@@ -16,6 +16,11 @@ export default function SettingsManagementView({ userRole }: { userRole: Role })
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState<'idle' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
+
+  // ── Purge state ──
+  const [purgeConfirm, setPurgeConfirm] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [purgeResult, setPurgeResult] = useState<null | { deletedCounts: Record<string, number>; errors: string[] }>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +66,20 @@ export default function SettingsManagementView({ userRole }: { userRole: Role })
       setErrorMessage(err instanceof Error ? err.message : 'Write operation failed');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePurge = async () => {
+    setPurging(true);
+    setPurgeResult(null);
+    try {
+      const result = await api.dataManagement.purgeAllTestData();
+      setPurgeResult(result);
+    } catch (err) {
+      setPurgeResult({ deletedCounts: {}, errors: [err instanceof Error ? err.message : 'Unknown error'] });
+    } finally {
+      setPurging(false);
+      setPurgeConfirm(false);
     }
   };
 
@@ -182,7 +201,114 @@ export default function SettingsManagementView({ userRole }: { userRole: Role })
           </div>
         </div>
 
-        {/* Row 2: Escalation Rules + Notifications & Audit */}
+        {/* Row 2: Model Retrain Thresholds */}
+        <div className="grid grid-cols-1 gap-6">
+          <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm space-y-5">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Model Retrain Thresholds</h3>
+            <p className="text-[11px] text-slate-400 -mt-2">
+              Evaluation criteria used by the AI Drift Monitor to trigger model retraining alerts.
+              These thresholds are evaluated against verified reports — see the Drift Monitor in the Analytics view for live status.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Minimum Agreement Rate */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold uppercase text-slate-500">Min Agreement Rate</label>
+                  <span className="text-xs font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
+                    {settings.aiConfig.retrainThresholds.minAgreementRate}%
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  If the clinician-AI agreement rate falls below this threshold, a model retraining alert is triggered.
+                </p>
+                <input
+                  type="range" min="50" max="99" step="1"
+                  value={settings.aiConfig.retrainThresholds.minAgreementRate}
+                  onChange={e => updateField('aiConfig', 'retrainThresholds', {
+                    ...settings.aiConfig.retrainThresholds,
+                    minAgreementRate: Number(e.target.value),
+                  })}
+                  className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-slate-950"
+                />
+              </div>
+
+              {/* Minimum Verified Sample Size */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold uppercase text-slate-500">Min Verified Sample</label>
+                  <span className="text-xs font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
+                    {settings.aiConfig.retrainThresholds.minVerifiedSampleSize}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Minimum number of verified reports required before threshold-based warnings are evaluated.
+                </p>
+                <div className="relative">
+                  <input
+                    type="number" min="10" max="10000" step="10"
+                    value={settings.aiConfig.retrainThresholds.minVerifiedSampleSize}
+                    onChange={e => updateField('aiConfig', 'retrainThresholds', {
+                      ...settings.aiConfig.retrainThresholds,
+                      minVerifiedSampleSize: Number(e.target.value),
+                    })}
+                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-800 font-mono"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 font-mono">reports</span>
+                </div>
+              </div>
+
+              {/* Max Category Drift Share */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold uppercase text-slate-500">Max Category Drift</label>
+                  <span className="text-xs font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
+                    {settings.aiConfig.retrainThresholds.maxCategoryDriftShare}%
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Maximum percentage of total disagreements a single category (e.g. Hallucination) can account for before a drift warning is raised.
+                </p>
+                <input
+                  type="range" min="10" max="80" step="1"
+                  value={settings.aiConfig.retrainThresholds.maxCategoryDriftShare}
+                  onChange={e => updateField('aiConfig', 'retrainThresholds', {
+                    ...settings.aiConfig.retrainThresholds,
+                    maxCategoryDriftShare: Number(e.target.value),
+                  })}
+                  className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-slate-950"
+                />
+              </div>
+
+              {/* Evaluation Window Days */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold uppercase text-slate-500">Evaluation Window</label>
+                  <span className="text-xs font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
+                    {settings.aiConfig.retrainThresholds.evaluationWindowDays}d
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Rolling evaluation window in days over which drift and agreement metrics are computed.
+                </p>
+                <div className="relative">
+                  <input
+                    type="number" min="1" max="90" step="1"
+                    value={settings.aiConfig.retrainThresholds.evaluationWindowDays}
+                    onChange={e => updateField('aiConfig', 'retrainThresholds', {
+                      ...settings.aiConfig.retrainThresholds,
+                      evaluationWindowDays: Number(e.target.value),
+                    })}
+                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900/10 text-slate-800 font-mono"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 font-mono">days</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Row 3: Escalation Rules + Notifications & Audit */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Escalation Rules */}
           <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm space-y-4">
@@ -300,6 +426,87 @@ export default function SettingsManagementView({ userRole }: { userRole: Role })
           )}
         </div>
       </form>
+
+      {/* ── Data Management — Danger Zone ── */}
+      <div className="border-t border-rose-200/60 pt-8 mt-8">
+        <div className="bg-rose-50/50 border-2 border-rose-200 rounded-2xl p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-rose-600">Danger Zone — Data Management</h3>
+          </div>
+          <p className="text-sm text-rose-700/80">
+            Permanently delete all test and dummy data from Firestore. This will remove all patients, reports, audit logs,
+            notifications, kiosks, organizations, regions, facilities, system health records, model weights, and analytics data.
+            <strong className="block mt-1">User accounts and system settings are preserved.</strong>
+          </p>
+
+          {!purgeConfirm && !purging && !purgeResult && (
+            <button
+              id="purge-test-data-btn"
+              onClick={() => setPurgeConfirm(true)}
+              className="px-5 py-2.5 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-sm transition-all"
+            >
+              Purge All Test Data
+            </button>
+          )}
+
+          {purgeConfirm && !purging && (
+            <div className="flex items-center gap-3 bg-white border border-rose-300 rounded-xl p-4 animate-fade-in">
+              <span className="text-sm font-bold text-rose-800">⚠ Are you sure? This action is irreversible.</span>
+              <button
+                id="purge-confirm-btn"
+                onClick={handlePurge}
+                className="px-4 py-2 text-sm font-bold text-white bg-rose-700 hover:bg-rose-800 rounded-lg transition-all"
+              >
+                Yes, Purge Everything
+              </button>
+              <button
+                onClick={() => setPurgeConfirm(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {purging && (
+            <div className="flex items-center gap-3 text-rose-600 animate-pulse">
+              <div className="w-5 h-5 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm font-bold">Purging data from all collections...</span>
+            </div>
+          )}
+
+          {purgeResult && (
+            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 animate-fade-in">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Purge Results</h4>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                {Object.entries(purgeResult.deletedCounts).map(([coll, count]) => (
+                  <div key={coll} className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs font-mono ${
+                    count === -1 ? 'bg-rose-50 text-rose-600' : count > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-50 text-slate-400'
+                  }`}>
+                    <span className="truncate mr-2">{coll}</span>
+                    <span className="font-bold">{count === -1 ? '✗' : count}</span>
+                  </div>
+                ))}
+              </div>
+              {purgeResult.errors.length > 0 && (
+                <div className="text-xs text-rose-600 font-mono space-y-1">
+                  {purgeResult.errors.map((err, i) => <p key={i}>✗ {err}</p>)}
+                </div>
+              )}
+              {purgeResult.errors.length === 0 && (
+                <p className="text-xs font-bold text-emerald-600">✓ All test data purged successfully.</p>
+              )}
+              <button
+                onClick={() => { setPurgeResult(null); setPurgeConfirm(false); }}
+                className="px-3 py-1.5 text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

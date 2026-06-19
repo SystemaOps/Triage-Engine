@@ -4,8 +4,9 @@ import { Role, TriageRecord, CaseStatus } from '../types';
 import { can } from '../lib/rbac';
 import { useAuth } from '../context/AuthContext';
 import { patientDisplayName } from '../lib/pii';
-import { Users, BrainCircuit, Activity, FileText } from 'lucide-react';
+import { Users, BrainCircuit, Activity, FileText, Sparkles } from 'lucide-react';
 import DiagnosticReportPanel from '../components/reports/DiagnosticReportPanel';
+import AITriagePanel from '../components/llm/AITriagePanel';
 
 // ── Category theme (Preclinic design tokens) ──
 const categoryTheme: Record<string, { dot: string; badge: string; label: string }> = {
@@ -39,6 +40,7 @@ export default function TriageQueue({ userRole }: { userRole: Role }) {
   const [filterCategory, setFilterCategory] = useState<string>('All');
   const [selectedRecord, setSelectedRecord] = useState<TriageRecord | null>(null);
   const [selectedReportPatient, setSelectedReportPatient] = useState<{ id: string; name: string } | null>(null);
+  const [showAITriage, setShowAITriage] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,6 +89,26 @@ export default function TriageQueue({ userRole }: { userRole: Role }) {
   );
 
   // ── Loading state ──
+  const handleExport = useCallback(() => {
+    const headers = ['Patient Name', 'Category', 'Confidence', 'Status', 'Timestamp', 'Case ID'];
+    const rows = records.map(r => [
+      patientDisplayName(userRole, r.patientName),
+      r.triageCategory,
+      `${Math.round(r.confidence * 100)}%`,
+      r.status,
+      new Date(r.timestamp).toLocaleString(),
+      r.id,
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `triage-queue-export-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [records, userRole]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[60vh] text-slate-400 font-mono text-sm animate-pulse">
@@ -106,7 +128,10 @@ export default function TriageQueue({ userRole }: { userRole: Role }) {
           </p>
         </div>
         <div className="flex gap-3">
-          <button className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+          <button
+            onClick={handleExport}
+            className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
+          >
             Export Report
           </button>
         </div>
@@ -315,6 +340,26 @@ export default function TriageQueue({ userRole }: { userRole: Role }) {
                             Acknowledge
                           </button>
                         )}
+                        {can(userRole, 'UPDATE_STATUS') && (
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (confirm('Are you sure you want to delete this case?')) {
+                                try {
+                                  await api.patients.delete(record.id);
+                                  // Refetch records
+                                  const data = await api.patients.getAll();
+                                  setRecords(data);
+                                } catch (err) {
+                                  alert('Failed to delete case: ' + (err instanceof Error ? err.message : String(err)));
+                                }
+                              }
+                            }}
+                            className="px-3 py-1.5 text-xs font-medium text-rose-600 bg-rose-50/10 border border-rose-200/50 rounded-lg hover:bg-rose-600 hover:text-white transition-colors"
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -326,15 +371,15 @@ export default function TriageQueue({ userRole }: { userRole: Role }) {
       )}
 
       {/* ── Slide-over Panel for Viewing Diagnostic Reports ── */}
-      {selectedRecord && !selectedReportPatient && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => setSelectedRecord(null)}>
+      {selectedRecord && !selectedReportPatient && !showAITriage && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => { setSelectedRecord(null); setShowAITriage(false); }}>
           <div className="bg-white rounded-2xl shadow-xl border border-slate-100 max-w-lg w-full mx-4 p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">{patientDisplayName(userRole, selectedRecord.patientName)}</h3>
                 <p className="text-xs font-mono text-slate-400 mt-0.5">{selectedRecord.id}</p>
               </div>
-              <button onClick={() => setSelectedRecord(null)} className="text-slate-400 hover:text-slate-600">&times;</button>
+              <button onClick={() => { setSelectedRecord(null); setShowAITriage(false); }} className="text-slate-400 hover:text-slate-600">&times;</button>
             </div>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
@@ -361,20 +406,49 @@ export default function TriageQueue({ userRole }: { userRole: Role }) {
                 <span className="ml-2 text-xs text-slate-600">{new Date(selectedRecord.timestamp).toLocaleString()}</span>
               </div>
             </div>
-            <div className="flex gap-3">
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setSelectedReportPatient({ id: selectedRecord.id, name: selectedRecord.patientName }); }}
+                  className="flex-1 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors flex items-center justify-center gap-2"
+                >
+                  <FileText size={14} /> View Report
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowAITriage(true); }}
+                  className="flex-1 py-2 text-sm font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Sparkles size={14} /> AI Triage
+                </button>
+              </div>
               <button
-                onClick={() => { setSelectedReportPatient({ id: selectedRecord.id, name: selectedRecord.patientName }); }}
-                className="flex-1 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors flex items-center justify-center gap-2"
-              >
-                <FileText size={14} /> View Diagnostic Report
-              </button>
-              <button
-                onClick={() => setSelectedRecord(null)}
-                className="flex-1 py-2 text-sm font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
+                onClick={() => { setSelectedRecord(null); setShowAITriage(false); }}
+                className="w-full py-2 text-sm font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── AI Triage Panel ── */}
+      {selectedRecord && showAITriage && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => { setSelectedRecord(null); setShowAITriage(false); }}>
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-100 max-w-lg w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-emerald-500" />
+                <h3 className="text-sm font-bold text-slate-900">AI Triage — {patientDisplayName(userRole, selectedRecord.patientName)}</h3>
+              </div>
+              <button
+                onClick={() => { setSelectedRecord(null); setShowAITriage(false); }}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                &times;
+              </button>
+            </div>
+            <AITriagePanel patient={selectedRecord} onClose={() => { setSelectedRecord(null); setShowAITriage(false); }} />
           </div>
         </div>
       )}

@@ -285,3 +285,257 @@ export interface AuditEntry {
   txHash: string;
   createdAt: string;
 }
+
+// ── Vector Search Types ──
+
+export interface VectorSearchMatchMetadata {
+  patientName: string;
+  triageCategory: string;
+  status: string;
+  confidence: number;
+  timestamp: string;
+  reportCategory?: string;
+  subType?: string;
+  verified?: boolean;
+  clinicianOverride?: string;
+  sourceType: 'patient' | 'report';
+}
+
+export interface VectorSearchMatch {
+  id: string;
+  score: number;
+  metadata: VectorSearchMatchMetadata;
+}
+
+export interface VectorSearchResult {
+  matches: VectorSearchMatch[];
+  query: string;
+}
+
+export interface VectorSearchFilters {
+  triageCategory?: string;
+  status?: string;
+  sourceType?: 'patient' | 'report';
+  minConfidence?: number;
+}
+
+// ── LLM + RAG Types ──
+
+export interface LLMHealth {
+  status: string;
+  rag_ready: boolean;
+  model: string;
+  version: string;
+}
+
+export interface TriageResult {
+  session_id: string;
+  urgency_level: string;
+  reasoning: string;
+  next_steps: string;
+  red_flags: string[];
+  disclaimer: string;
+  latency_ms: number;
+}
+
+export interface ChatResult {
+  session_id: string;
+  reply: string;
+  disclaimer: string;
+}
+
+export interface TriageHistoryEntry {
+  id: string;
+  patientId: string;
+  patientName: string;
+  symptoms: string;
+  result: TriageResult;
+  timestamp: string;
+}
+
+// ── OCR Types ──
+
+export interface OcrProcessResponse {
+  success: boolean;
+  /** Extracted lab values from the OCR service */
+  data: Record<string, unknown>;
+  /** Processing metadata */
+  processedAt: string;
+  source: string;
+}
+
+export interface OcrSaveReportRequest {
+  patientId: string;
+  patientName: string;
+  extractedData: Record<string, unknown>;
+  rawText: string;
+  confidence: number;
+}
+
+export interface OcrSaveReportWithTriageRequest extends OcrSaveReportRequest {
+  /** The LLM triage result to include in the report */
+  triageResult: TriageResult;
+}
+
+// ── STT (Speech-to-Text) Types ──
+
+/** Available Whisper model sizes from the STT service */
+export type SttModel = "tiny" | "base" | "small" | "medium" | "large" | "turbo";
+
+/** STT model options with display labels for the UI */
+export const STT_MODELS: Array<{ id: SttModel; label: string; description: string }> = [
+  { id: "tiny", label: "Tiny", description: "Fastest, lowest resource (~500MB)" },
+  { id: "base", label: "Base", description: "Fast, ~1GB" },
+  { id: "small", label: "Small", description: "Balanced speed/accuracy" },
+  { id: "medium", label: "Medium", description: "Accurate, ~3GB" },
+  { id: "large", label: "Large", description: "Most accurate, highest quality" },
+  { id: "turbo", label: "Turbo", description: "Latest optimized, fast + accurate" },
+];
+
+export interface SttTranscribeResponse {
+  success: boolean;
+  /** Transcribed text (clinical reasoning from voice-triage pipeline) */
+  text: string;
+  /** Detected or requested language */
+  language: string | null;
+  /** Processing timestamp */
+  timestamp: string;
+  /** Model used for transcription */
+  model: string;
+  /** Processing time in seconds */
+  processingTime: number | null;
+  /** Session ID for follow-up queries */
+  sessionId: string;
+  /** Path to the stored audio file on the server */
+  audioFile: string | null;
+  /** Path to the stored transcript file on the server */
+  transcriptFile: string | null;
+  /** Path to the stored metadata file on the server */
+  metadataFile: string | null;
+  /** Triage result from the unified voice-triage pipeline (included when routed through unified API) */
+  triage?: {
+    session_id: string;
+    urgency_level: string;
+    reasoning: string;
+    next_steps: string;
+    red_flags: string[];
+    disclaimer: string;
+    latency_ms: number | null;
+  };
+}
+
+export interface SttHealthResponse {
+  reachable: boolean;
+  status: string;
+  model: string;
+  service: string;
+}
+
+export interface SttSaveTranscriptRequest {
+  patientId: string;
+  patientName: string;
+  transcriptText: string;
+  language: string | null;
+  model: string;
+  sessionId: string;
+  confidence: number;
+}
+
+export interface SttSaveTranscriptWithTriageRequest extends SttSaveTranscriptRequest {
+  /** The LLM triage result to include in the report */
+  triageResult: TriageResult;
+}
+
+// ── TTS (Text-to-Speech) Types ──
+
+export type TtsVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
+export type TtsModel = "tts-1" | "tts-1-hd";
+export type TtsAudioFormat = "mp3" | "opus" | "aac" | "flac" | "wav" | "pcm";
+
+/** TTS voice options with display labels for the UI */
+export const TTS_VOICES: Array<{ id: TtsVoice; label: string; description: string }> = [
+  { id: "alloy", label: "Alloy", description: "Versatile, balanced voice" },
+  { id: "echo", label: "Echo", description: "Warm, expressive voice" },
+  { id: "fable", label: "Fable", description: "Bright, engaging voice" },
+  { id: "onyx", label: "Onyx", description: "Deep, authoritative voice" },
+  { id: "nova", label: "Nova", description: "Clear, professional voice" },
+  { id: "shimmer", label: "Shimmer", description: "Soft, calm voice" },
+];
+
+/** TTS model options with display labels for the UI */
+export const TTS_MODELS: Array<{ id: TtsModel; label: string; description: string }> = [
+  { id: "tts-1", label: "tts-1", description: "Low latency, optimized for real-time" },
+  { id: "tts-1-hd", label: "tts-1-hd", description: "Higher quality, slightly more latency" },
+];
+
+export interface TtsSynthesizeRequest {
+  text: string;
+  voice?: TtsVoice;
+  model?: TtsModel;
+  responseFormat?: TtsAudioFormat;
+  speed?: number;
+}
+
+export interface TtsSynthesizeResponse {
+  success: boolean;
+  /** Audio data as a base64-encoded string */
+  audioBase64: string;
+  /** MIME type of the audio (e.g., "audio/mpeg") */
+  contentType: string;
+  /** Preview of the original text */
+  text: string;
+  /** Voice used */
+  voice: string;
+  /** Model used */
+  model: string;
+}
+
+export interface TtsVoiceOption {
+  id: TtsVoice;
+  label: string;
+  description: string;
+}
+
+// ── X-Ray Analysis Types ──
+
+export interface XRayClassifyResponse {
+  success: boolean;
+  data: Record<string, unknown>;
+  processedAt: string;
+  source: string;
+  target: string;
+}
+
+export interface XRaySaveReportRequest {
+  patientId: string;
+  patientName: string;
+  target: string;
+  rawData: string;
+  confidence: number;
+}
+
+export interface XRaySaveReportWithTriageRequest extends XRaySaveReportRequest {
+  triageResult: TriageResult;
+}
+
+// ── Visual Analysis Types ──
+
+export interface VisualAnalyzeResponse {
+  success: boolean;
+  data: Record<string, unknown>;
+  processedAt: string;
+  source: string;
+  target: string;
+}
+
+export interface VisualSaveReportRequest {
+  patientId: string;
+  patientName: string;
+  target: string;
+  rawData: string;
+  confidence: number;
+}
+
+export interface VisualSaveReportWithTriageRequest extends VisualSaveReportRequest {
+  triageResult: TriageResult;
+}

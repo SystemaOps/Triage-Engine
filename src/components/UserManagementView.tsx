@@ -59,38 +59,38 @@ export default function UserManagementView({ userRole }: { userRole: Role }) {
   }, [currentUser, userRole]);
 
   return (
-    <div className="min-h-screen bg-slate-950 p-8">
+    <div className="min-h-screen bg-slate-50 p-8">
       <div className="max-w-[1400px] mx-auto space-y-8">
         {/* Header */}
         <div className="flex justify-between items-end">
           <div>
-            <h1 className="text-3xl font-light tracking-tight text-white">Identity Access Control</h1>
+            <h1 className="text-3xl font-light tracking-tight text-slate-900">Identity Access Control</h1>
             <p className="text-slate-500 mt-2">Administrative management of the 8-role security matrix.</p>
           </div>
-          <div className="px-4 py-2 bg-slate-900/40 backdrop-blur-xl border border-slate-800/60 rounded-xl text-xs font-mono text-slate-400">
+          <div className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-500 shadow-sm">
             SYSTEM_SYNC: ACTIVE
           </div>
         </div>
 
         {/* Data Grid */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/60 rounded-2xl overflow-hidden">
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
           <table className="w-full text-left">
             <thead>
-              <tr className="border-b border-slate-800/60 text-[10px] uppercase tracking-widest text-slate-500">
+              <tr className="border-b border-slate-100 text-[10px] uppercase tracking-widest text-slate-500">
                 <th className="py-4 px-6">Principal Identifier</th>
                 <th className="py-4 px-6">Account Metadata</th>
                 <th className="py-4 px-6">Role Assignment</th>
                 <th className="py-4 px-6 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={4} className="py-20 text-center text-slate-600 font-mono">LOADING_REGISTRY...</td></tr>
+                <tr><td colSpan={4} className="py-20 text-center text-slate-400 font-mono">LOADING_REGISTRY...</td></tr>
               ) : users.map((user) => (
-                <tr key={user.id} className="group hover:bg-slate-800/20 transition-colors">
+                <tr key={user.id} className="group hover:bg-slate-50 transition-colors">
                   <td className="py-4 px-6 font-mono text-xs text-slate-400">{user.id}</td>
                   <td className="py-4 px-6">
-                    <div className="text-sm text-slate-200">{user.name}</div>
+                    <div className="text-sm text-slate-900">{user.name}</div>
                     <div className="text-xs font-mono text-slate-500">{user.email}</div>
                   </td>
                   <td className="py-4 px-6">
@@ -103,7 +103,7 @@ export default function UserManagementView({ userRole }: { userRole: Role }) {
                       <button
                         onClick={() => handleToggleStatus(user)}
                         disabled={updatingId === user.id}
-                        className="text-[10px] uppercase tracking-widest text-slate-600 hover:text-white transition-colors"
+                        className="text-[10px] uppercase tracking-widest text-slate-500 hover:text-slate-700 transition-colors"
                       >
                         {updatingId === user.id ? 'PENDING...' : 'TOGGLE_STATUS'}
                       </button>

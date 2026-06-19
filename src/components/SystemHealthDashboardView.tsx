@@ -53,10 +53,11 @@ export default function SystemHealthDashboardView({ userRole }: { userRole: Role
 
   return (
     <div className="space-y-6">
-      <PageHeader title="System Telemetry & Health Deck" />
+      <PageHeader title="System Telemetry & Unified Health Deck" />
 
       <div className="text-sm text-slate-600 mb-4">
-        Real-time edge metrics and AI pipeline monitoring nodes — {services.length} subsystems tracked.
+        Real-time health status across all infrastructure, AI, and edge subsystems — consolidated Unified Triage API replaces individual OCR, Visual, and X-Ray entries.{' '}
+        <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded">{services.length} services tracked</span>
       </div>
 
       {/* Top Tier: Infrastructure Hardware Vitals */}
@@ -94,7 +95,7 @@ export default function SystemHealthDashboardView({ userRole }: { userRole: Role
               <span className="text-4xl font-bold text-slate-900">{avgLatency}ms</span>
               <span className="text-sm text-slate-500">across {totalCount} nodes</span>
             </div>
-            <p className="text-xs text-slate-500">Aggregated from live Firestore health documents.</p>
+            <p className="text-xs text-slate-500">Aggregated from live Firestore health documents (Unified Triage API consolidates LLM + RAG + Vision/OCR).</p>
           </div>
         </Card>
 
@@ -117,7 +118,7 @@ export default function SystemHealthDashboardView({ userRole }: { userRole: Role
                 </span>
               </div>
             </div>
-            <p className="text-xs text-slate-500">Real-time subsystem status aggregation.</p>
+            <p className="text-xs text-slate-500">Real-time subsystem status — STT kept separate (no unified equivalent).</p>
           </div>
         </Card>
       </div>
@@ -126,7 +127,7 @@ export default function SystemHealthDashboardView({ userRole }: { userRole: Role
       <Card className="p-6 space-y-4">
         <div className="space-y-2">
           <h3 className="text-lg font-semibold text-slate-900">Subsystem Node Matrix</h3>
-          <p className="text-sm text-slate-600">Live topology of all registered infrastructure, AI, and edge components.</p>
+          <p className="text-sm text-slate-600">Live topology of all registered infrastructure, AI, and edge components. <span className="text-xs text-slate-400 font-mono">Unified Triage API covers LLM/RAG + OCR + Visual + X-Ray.</span></p>
         </div>
 
         <div className="flex gap-6 text-sm">
@@ -178,7 +179,7 @@ export default function SystemHealthDashboardView({ userRole }: { userRole: Role
             <span className="text-slate-500">~ health-status-events</span>
           </div>
           <span className={`text-xs px-2 py-1 rounded-full font-semibold ${services.length > 0 ? 'bg-emerald-900 text-emerald-200 animate-pulse' : 'bg-slate-800 text-slate-500'}`}>
-            {services.length > 0 ? 'STREAMING ACTIVE' : 'AWAITING DATA'}
+            {services.length > 0 ? 'STREAMING' : 'AWAITING DATA'}
           </span>
         </div>
 

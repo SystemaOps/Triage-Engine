@@ -9,6 +9,14 @@ import {
 import { logger } from "firebase-functions/v2";
 import { exportGoldenDatasetAsJsonl } from "./golden-dataset";
 
+// ── Vector Search Functions ──
+export {
+  searchTriageCases,
+  getSimilarCases,
+  indexAllTriageCases,
+  indexPatientOnWrite,
+} from "./vector-search";
+
 initializeApp();
 
 // ── Type definitions (self-contained for the Cloud Functions runtime) ──

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Activity,
   Users,
@@ -7,8 +7,16 @@ import {
   Bell,
   Settings,
   Search,
-  ChevronDown,
   LayoutDashboard,
+  Database,
+  ScanText,
+  Mic,
+  Volume2,
+  Headphones,
+  Bone,
+  Eye,
+  Building2,
+  Zap,
 } from 'lucide-react';
 
 export type NavItem =
@@ -16,10 +24,20 @@ export type NavItem =
   | 'triage-queue'
   | 'kiosk-fleet'
   | 'llm-pipelines'
+  | 'vector-search'
+  | 'ocr-processing'
+  | 'stt-processing'
+  | 'tts-processing'
+  | 'voice-triage-processing'
+  | 'xray-processing'
+  | 'visual-processing'
   | 'user-roles'
   | 'audit-logs'
+  | 'settings'
+  | 'notifications'
   | 'rag-pipelines'
-  | 'mobile-interfaces';
+  | 'mobile-interfaces'
+  | 'organization';
 
 interface AdminPortalShellProps {
   children: React.ReactNode;
@@ -45,37 +63,46 @@ const navSections = [
     ],
   },
   {
+    label: 'Intelligence',
+    items: [
+      { id: 'vector-search' as NavItem, label: 'Vector Search', icon: Database },
+      { id: 'ocr-processing' as NavItem, label: 'OCR Processing', icon: ScanText },
+      { id: 'stt-processing' as NavItem, label: 'STT Transcription', icon: Mic },
+      { id: 'tts-processing' as NavItem, label: 'TTS Speech', icon: Volume2 },
+      { id: 'voice-triage-processing' as NavItem, label: 'Voice Triage', icon: Headphones },
+      { id: 'xray-processing' as NavItem, label: 'X-Ray Analysis', icon: Bone },
+      { id: 'visual-processing' as NavItem, label: 'Visual Analysis', icon: Eye },
+    ],
+  },
+  {
     label: 'System',
     items: [
+      { id: 'organization' as NavItem, label: 'Organization', icon: Building2 },
+      { id: 'notifications' as NavItem, label: 'Notifications', icon: Bell },
       { id: 'user-roles' as NavItem, label: 'User Roles', icon: Users },
       { id: 'audit-logs' as NavItem, label: 'Audit Logs', icon: Activity },
+      { id: 'settings' as NavItem, label: 'System Settings', icon: Settings },
     ],
   },
 ];
 
 export default function AdminPortalShell({ children, activeNav, onNavChange }: AdminPortalShellProps) {
+  const [aiStatusOpen, setAiStatusOpen] = useState(false);
+
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
       {/* ─── Left Sidebar ─── */}
       <aside className="w-64 bg-white border-r border-slate-200 flex flex-col flex-shrink-0 z-20">
         {/* Brand */}
-        <div className="h-16 flex items-center px-6 border-b border-slate-100">
-          <div className="flex items-center gap-2 text-indigo-600">
-            <BrainCircuit size={24} />
-            <span className="font-bold text-lg tracking-tight text-slate-900">TriageOS</span>
-          </div>
-        </div>
-
-        {/* Clinic Selector */}
-        <div className="p-4">
-          <div className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-lg border border-slate-100 cursor-pointer">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs">
-                HQ
-              </div>
-              <span className="text-sm font-medium">Central Network</span>
+        <div className="h-16 flex items-center px-5 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow-sm shadow-indigo-200 flex-shrink-0 overflow-hidden">
+              <img src="/favicon.png" alt="MedTriage" className="w-6 h-6 object-contain brightness-0 invert" />
             </div>
-            <ChevronDown size={16} className="text-slate-400" />
+            <div className="leading-tight">
+              <span className="font-bold text-sm tracking-tight text-slate-900 block">MedTriage OS</span>
+              <span className="text-[10px] text-slate-400 uppercase tracking-widest">Control Plane</span>
+            </div>
           </div>
         </div>
 
@@ -122,16 +149,50 @@ export default function AdminPortalShell({ children, activeNav, onNavChange }: A
             />
           </div>
 
-          <div className="flex items-center gap-4">
-            <button className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-medium rounded-lg shadow-sm hover:shadow transition-all">
-              <BrainCircuit size={16} /> AI Status: Active
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setAiStatusOpen(!aiStatusOpen)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow-md hover:from-indigo-500 hover:to-violet-500 transition-all relative"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse-dot" />
+              <Zap size={13} /> AI Active
+              {aiStatusOpen && (
+                <div className="absolute top-full left-0 mt-2 w-60 bg-white border border-slate-200 rounded-xl shadow-2xl p-4 text-left z-30 animate-fade-in-scale">
+                  <div className="flex items-center gap-2 mb-3">
+                    <img src="/favicon.png" alt="" className="w-5 h-5 object-contain" />
+                    <p className="text-xs font-bold text-slate-900">AI Pipeline Status</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-500">Embeddings</span>
+                      <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">text-embedding-3-small</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-500">Vector index</span>
+                      <span className="text-[10px] font-medium text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">Pinecone 1536d</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-500">Inference</span>
+                      <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Operational</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </button>
             <div className="h-6 w-px bg-slate-200 mx-2" />
-            <button className="text-slate-400 hover:text-slate-600 relative">
+            <button
+              onClick={() => onNavChange('notifications')}
+              className="text-slate-400 hover:text-slate-600 relative"
+              title="Notifications"
+            >
               <Bell size={20} />
               <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white" />
             </button>
-            <button className="text-slate-400 hover:text-slate-600">
+            <button
+              onClick={() => onNavChange('settings')}
+              className="text-slate-400 hover:text-slate-600"
+              title="Settings"
+            >
               <Settings size={20} />
             </button>
             <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm ml-2">

@@ -5,6 +5,49 @@ import {
 } from "firebase-admin/firestore";
 import { logger } from "firebase-functions/v2";
 
+// ── PHI Text Scrubbing ──
+
+/**
+ * Common PHI patterns to detect in unstructured text.
+ * Scans for names, contact info, identifiers embedded in free-text fields.
+ *
+ * 🔗 Canonical source: `src/lib/pii.ts` in the root project.
+ *    Keep this array in sync with the shared version to prevent divergence.
+ */
+const PHI_PATTERNS: RegExp[] = [
+  // Honorific + Name: "Mr. Smith", "Dr. Johnson"
+  /\b(?:Mr\.|Mrs\.|Ms\.|Dr\.|Miss|Mx\.)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/g,
+  // Contextual name patterns: "Patient John Doe", "seen by Sarah"
+  /\b(?:patient|called|seen\s+by|contacted|referred\s+to|spoke\s+with)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/gi,
+  // Email addresses
+  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+  // Phone numbers
+  /\b(?:\+?1?[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,
+  // SSN-like patterns
+  /\b\d{3}-\d{2}-\d{4}\b/g,
+  // Medical record numbers
+  /\b(?:MRN|mrn|medical\s+record|record\s+#?)\s*:?\s*[A-Za-z0-9]{6,12}\b/gi,
+  // DOB patterns
+  /\b(?:DOB|dob|date\s+of\s+birth|born)\s*:?\s*\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/gi,
+  // Street addresses
+  /\b\d+\s+(?:[A-Z][a-z]+\s+)+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Court|Ct|Circle|Cir)\b/g,
+  // ZIP codes
+  /\b\d{5}(?:-\d{4})?\b/g,
+];
+
+/**
+ * Scrubs common unstructured PHI from a text string.
+ * Returns null when input is null.
+ */
+function stripPhiFromText(text: string | null | undefined): string | null {
+  if (!text) return text ?? null;
+  let cleaned = text;
+  for (const pattern of PHI_PATTERNS) {
+    cleaned = cleaned.replace(pattern, '[PHI REDACTED]');
+  }
+  return cleaned;
+}
+
 // ── Types ──
 
 interface RawDiagnosticReport {
@@ -81,11 +124,11 @@ function stripPhi(report: RawDiagnosticReport): GoldenDatasetRecord {
     category: report.category ?? "unknown",
     subType: report.subType ?? "unknown",
     confidence: report.confidence ?? 0,
-    aiAnalysis: report.content?.aiAnalysis ?? null,
-    rawText: report.content?.rawText ?? null,
+    aiAnalysis: stripPhiFromText(report.content?.aiAnalysis),
+    rawText: stripPhiFromText(report.content?.rawText),
     clinicianOverride: report.clinicianTriageOverride ?? null,
     disagreementCategory: report.disagreementCategory ?? null,
-    reviewNote: report.reviewNote ?? null,
+    reviewNote: stripPhiFromText(report.reviewNote),
     clinicianAgreed: report.clinicianAgreement === true,
     verifiedAt: report.verifiedAt ?? null,
     createdAt: report.createdAt ?? new Date().toISOString(),

@@ -49,39 +49,39 @@ export const KioskManagementView: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-8 font-sans selection:bg-indigo-500/30 animate-fade-in">
+    <div className="min-h-screen bg-slate-50 p-8 font-sans animate-fade-in">
       {/* Upper Metrics Layer */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-5 backdrop-blur-md relative overflow-hidden group">
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden group hover:border-slate-300 transition-all">
           <div className="absolute top-0 left-0 w-1 h-full bg-slate-500" />
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Kiosks</p>
-              <h3 className="text-3xl font-bold tracking-tight mt-1 text-white">{metrics.total}</h3>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Kiosks</p>
+              <h3 className="text-3xl font-bold tracking-tight mt-1 text-slate-900">{metrics.total}</h3>
             </div>
-            <div className="p-2 bg-slate-800/50 rounded-lg text-slate-400"><HardDrive size={18} /></div>
+            <div className="p-2 bg-slate-100 rounded-lg text-slate-500"><HardDrive size={18} /></div>
           </div>
         </div>
 
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-5 backdrop-blur-md relative overflow-hidden group">
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden group hover:border-slate-300 transition-all">
           <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Online & Nominal</p>
-              <h3 className="text-3xl font-bold tracking-tight mt-1 text-white">{metrics.online}</h3>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Online & Nominal</p>
+              <h3 className="text-3xl font-bold tracking-tight mt-1 text-slate-900">{metrics.online}</h3>
             </div>
-            <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400"><Activity size={18} /></div>
+            <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600"><Activity size={18} /></div>
           </div>
         </div>
 
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-5 backdrop-blur-md relative overflow-hidden group">
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden group hover:border-slate-300 transition-all">
           <div className="absolute top-0 left-0 w-1 h-full bg-rose-500" />
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Offline / Fault</p>
-              <h3 className="text-3xl font-bold tracking-tight mt-1 text-white">{metrics.offline}</h3>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Offline / Fault</p>
+              <h3 className="text-3xl font-bold tracking-tight mt-1 text-slate-900">{metrics.offline}</h3>
             </div>
-            <div className="p-2 bg-rose-500/10 rounded-lg text-rose-400"><AlertTriangle size={18} /></div>
+            <div className="p-2 bg-rose-50 rounded-lg text-rose-600"><AlertTriangle size={18} /></div>
           </div>
         </div>
       </div>
@@ -90,8 +90,8 @@ export const KioskManagementView: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
         {/* Left Column: Connectivity Trends */}
-        <div className="lg:col-span-7 bg-slate-900/40 border border-slate-800/60 rounded-2xl p-6 backdrop-blur-xl">
-          <h2 className="text-lg font-bold text-white tracking-tight mb-6">Kiosk Connectivity Trends</h2>
+        <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <h2 className="text-lg font-bold text-slate-900 tracking-tight mb-6">Kiosk Connectivity Trends</h2>
           <div className="h-64 w-full font-mono text-xs min-w-0">
             {chartMounted && (
               <ResponsiveContainer width="100%" height="100%">
@@ -102,10 +102,10 @@ export const KioskManagementView: React.FC = () => {
                       <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="time" stroke="#475569" tickLine={false} axisLine={false} />
-                  <YAxis allowDecimals={false} stroke="#475569" tickLine={false} axisLine={false} />
+                  <XAxis dataKey="time" stroke="#94a3b8" tickLine={false} axisLine={false} />
+                  <YAxis allowDecimals={false} stroke="#94a3b8" tickLine={false} axisLine={false} />
                   <Tooltip 
-                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f1f5f9', borderRadius: '8px' }} 
+                    contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', color: '#334155', borderRadius: '8px' }} 
                     itemStyle={{ color: '#10b981' }}
                   />
                   <Area type="monotone" dataKey="active" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorActive)" />
@@ -116,21 +116,21 @@ export const KioskManagementView: React.FC = () => {
         </div>
 
         {/* Right Column: Live Terminal Alert Matrix */}
-        <div className="lg:col-span-5 bg-slate-900/40 border border-slate-800/60 rounded-2xl p-6 backdrop-blur-xl flex flex-col">
-          <h2 className="text-lg font-bold text-white tracking-tight mb-4">Live Edge Alerts</h2>
+        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col">
+          <h2 className="text-lg font-bold text-slate-900 tracking-tight mb-4">Live Edge Alerts</h2>
           <div className="flex-1 space-y-3 overflow-y-auto max-h-[300px] pr-2">
             {metrics.offline === 0 ? (
-               <div className="h-full flex flex-col items-center justify-center text-center p-6 border border-dashed border-slate-800 rounded-xl bg-slate-900/20">
-                 <CheckCircle className="text-emerald-500/50 mb-2" size={24} />
-                 <span className="text-xs font-mono font-bold text-slate-500 tracking-widest">NETWORK STABLE</span>
+               <div className="h-full flex flex-col items-center justify-center text-center p-6 border border-dashed border-slate-300 rounded-xl bg-slate-50">
+                 <CheckCircle className="text-emerald-400 mb-2" size={24} />
+                 <span className="text-xs font-mono font-bold text-slate-400 tracking-widest">NETWORK STABLE</span>
                </div>
             ) : (
               kiosks.filter(k => k.status === 'offline' || k.status === 'error').map(k => (
-                <div key={k.id} className="p-4 border border-rose-900/50 bg-rose-950/20 rounded-xl flex items-start gap-3">
+                <div key={k.id} className="p-4 border border-rose-200 bg-rose-50 rounded-xl flex items-start gap-3">
                   <div className="mt-0.5 text-rose-500 animate-pulse"><Server size={16} /></div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-200">{k.name || `Terminal ${k.id.substring(0,6)}`}</h4>
-                    <p className="text-xs text-slate-400 mt-1">Heartbeat lost. Requires manual restart or network diagnostics at location: {k.locationId || 'Unknown'}.</p>
+                    <h4 className="text-sm font-bold text-slate-800">{k.name || `Terminal ${k.id.substring(0,6)}`}</h4>
+                    <p className="text-xs text-slate-500 mt-1">Heartbeat lost. Requires manual restart or network diagnostics at location: {k.locationId || 'Unknown'}.</p>
                   </div>
                 </div>
               ))
